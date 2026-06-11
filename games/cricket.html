@@ -230,6 +230,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   });
 
   launch();
+
+  if (window.goatcounter) {
+    window.goatcounter.count({
+      path:  'game-started-cricket',
+      title: 'Cricket game started',
+      event: true,
+    });
+  }
 });
 
 document.getElementById('resume-btn').addEventListener('click', () => {

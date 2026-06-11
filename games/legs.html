@@ -168,6 +168,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   buildGrid();
   renderAll();
 });
+  if (window.goatcounter) {
+    window.goatcounter.count({
+      path:  'game-started-legs',
+      title: 'Legs game started',
+      event: true,
+    });
+  }
+
 
 function isAlive(p) { return G.legs[p] > 0; }
 function turnTotal() {

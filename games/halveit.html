@@ -197,6 +197,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   document.getElementById('game-screen').style.display = 'flex';
   renderAll();
 });
+  if (window.goatcounter) {
+    window.goatcounter.count({
+      path:  'game-started-halveit',
+      title: 'Halve It game started',
+      event: true,
+    });
+  }
+
 
 function curTarget() { return G.seq[G.round - 1]; }
 

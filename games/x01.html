@@ -199,6 +199,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   G.players.forEach(p => { G.scores[p] = selScore; G.history[p] = []; });
   launch();
 });
+  if (window.goatcounter) {
+    window.goatcounter.count({
+      path:  'game-started-x01-' + selScore,
+      title: 'X01 game started',
+      event: true,
+    });
+  }
+
 
 document.getElementById('resume-btn').addEventListener('click', () => {
   try { G = JSON.parse(localStorage.getItem(SAVE_KEY)); launch(); }

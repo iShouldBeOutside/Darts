@@ -156,6 +156,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   document.getElementById('game-screen').style.display = 'flex';
   renderAll();
 });
+  if (window.goatcounter) {
+    window.goatcounter.count({
+      path:  'game-started-shanghai',
+      title: 'Shanghai game started',
+      event: true,
+    });
+  }
+
 
 function renderAll() {
   const cp = G.players[G.currentPlayer];
