@@ -3,7 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+<!-- ── PWA: Page title & theme colour shown in browser chrome ── -->
 <title>Darts</title>
+<meta name="theme-color" content="#cc2200">
+
+<!-- ── PWA: Makes the app work properly when saved to home screen ── -->
+<!-- standalone = hides browser UI (address bar etc.) when launched from icon -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Darts">
+
+<!-- ── PWA: Apple touch icon (shown on iOS home screen) ── -->
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<!-- ── PWA: Manifest links the browser to all your PWA metadata ── -->
+<link rel="manifest" href="manifest.json">
+
 <link rel="stylesheet" href="common.css">
 <style>
 /* ── Hub-specific layout ── */
@@ -296,13 +313,32 @@
 </footer> -->
 
 </div>
+
 <script>
+  // ── Existing theme logic (unchanged) ──────────────────────────────────────
   initTheme();
   document.getElementById('theme-toggle').addEventListener('click', () => {
     toggleTheme();
     SFX.hit();
   });
+
+  // ── PWA: Register the service worker ─────────────────────────────────────
+  // "serviceWorker" in navigator checks if the browser supports it.
+  // Almost all modern browsers do, but this guard prevents crashes on old ones.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/Darts/service-worker.js')
+        .then((reg) => {
+          console.log('[PWA] Service worker registered, scope:', reg.scope);
+        })
+        .catch((err) => {
+          console.warn('[PWA] Service worker registration failed:', err);
+        });
+    });
+  }
 </script>
+
 <!-- <script data-goatcounter="https://jucofuco.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script> -->
 </body>

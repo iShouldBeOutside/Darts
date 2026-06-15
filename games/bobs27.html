@@ -274,5 +274,61 @@ document.getElementById('end-btn').addEventListener('click', () => { if (confirm
 </script>
 <!-- <script data-goatcounter="https://jucofuco.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script> -->
+
+<script>
+(function () {
+  // ── 1. CHECK SUPPORT ──────────────────────────────────────────────────────
+  // Not all browsers support Wake Lock yet. This check prevents crashes.
+  // Supported: Chrome 84+, Edge 84+, Safari 16.4+, Firefox (not yet)
+  if (!('wakeLock' in navigator)) {
+    console.log('[WakeLock] Not supported on this browser.');
+    return; // exit silently — game still works, screen may sleep
+  }
+ 
+  // ── 2. HOLD A REFERENCE TO THE LOCK ──────────────────────────────────────
+  // We store it so we can release it when needed.
+  let wakeLock = null;
+ 
+  // ── 3. REQUEST THE LOCK ───────────────────────────────────────────────────
+  // This is async because the browser may need to prompt the user (it usually
+  // doesn't, but the API requires it). 'screen' is the only supported type.
+  async function acquireWakeLock() {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('[WakeLock] Screen will stay on.');
+ 
+      // ── 4. LISTEN FOR AUTOMATIC RELEASE ────────────────────────────────
+      // The browser releases the lock automatically when:
+      //   · The user switches to another tab
+      //   · The user minimises the browser
+      //   · The phone screen is locked manually
+      // This listener fires when any of those happen.
+      wakeLock.addEventListener('release', () => {
+        console.log('[WakeLock] Released by browser.');
+        wakeLock = null;
+      });
+ 
+    } catch (err) {
+      // Acquisition can fail if the page isn't visible yet, or on low battery
+      // on some devices. This is not a fatal error.
+      console.warn('[WakeLock] Could not acquire:', err.name, err.message);
+    }
+  }
+ 
+  // ── 5. RE-ACQUIRE WHEN THE USER COMES BACK ────────────────────────────────
+  // When the user switches away and back, the lock is released automatically
+  // (see step 4). This listener re-requests it when they return.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && wakeLock === null) {
+      acquireWakeLock();
+    }
+  });
+ 
+  // ── 6. START IT ────────────────────────────────────────────────────────────
+  // Request the lock as soon as the game page loads.
+  acquireWakeLock();
+})();
+</script>
+
 </body>
 </html>

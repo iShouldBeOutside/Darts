@@ -1,0 +1,25 @@
+{
+  "name": "Darts Scorer",
+  "short_name": "Darts",
+  "description": "Dart scoring app — Cricket, 501, Shanghai and more",
+  "start_url": "/Darts/",
+  "scope": "/Darts/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0d0d",
+  "theme_color": "#cc2200",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
