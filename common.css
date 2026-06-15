@@ -164,6 +164,7 @@ body {
   text-shadow: 0 0 6px rgba(255,170,0,0.4);
   transition: border-color 0.15s;
   -webkit-appearance: none;
+  appearance: none;
   caret-color: var(--led-amber);
 }
 .led-input:focus { border-color: var(--led-amber); }
@@ -182,6 +183,7 @@ body {
   outline: none;
   text-shadow: 0 0 6px rgba(255,170,0,0.4);
   -webkit-appearance: none;
+  appearance: none;
 }
 .led-input-sm:focus { border-color: var(--led-amber); }
 
@@ -612,3 +614,23 @@ body.theme-bright .theme-toggle::after { left: 29px; background: var(--led-amber
   line-height: 1;
 }
 .theme-btn:active { border-color: var(--led-amber); color: var(--led-amber); }
+
+/* ═══ QR Code (hub only) ═══ */
+.hub-header-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+}
+
+.qr-code {
+    width: 150px;
+    height: 150px;
+    padding: 8px;
+    border-radius: 8px;
+    transition: transform 0.2s ease;
+}
+
+.qr-code:hover {
+    transform: scale(1.05);
+}

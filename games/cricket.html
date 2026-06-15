@@ -3,9 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>KRIKET · DARts</title>
+<title>CRICKET · Darts</title>
 <link rel="stylesheet" href="../common.css">
-
+<style>
+  /* Pending (uncommitted) tap — shown after 1st or 2nd tap on a number */
+  .tslot.pending {
+    color: var(--led-amber, #ffaa00);
+    border-color: var(--led-amber, #ffaa00);
+    box-shadow: 0 0 6px var(--led-amber, #ffaa00);
+    opacity: 0.8;
+  }
+  /* Target button glow while being tapped (1 or 2 taps, not yet committed) */
+  .tbtn.tapping {
+    outline: 2px solid var(--led-amber, #ffaa00);
+    box-shadow: 0 0 8px var(--led-amber, #ffaa00);
+  }
+</style>
 <script src="../sfx.js"></script>
 <script src="../utils.js"></script>
 </head>
@@ -18,7 +31,7 @@
 
   <div class="setup-top">
     <a class="back-btn" href="../index.html">◂ HUB</a>
-    <div class="setup-title">KRIKET BEZ BULZAJZ</div>
+    <div class="setup-title">CRICKET</div>
   </div>
 
   <div class="s-section">
@@ -44,16 +57,13 @@
     <span class="s-label">[ SELECT 7 NUMBERS ]</span>
     <div class="num-count">Selected: <span id="sel-count">0</span> / 7</div>
     <div class="num-grid" id="num-grid"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;margin-top:0.3rem">
-      <button class="btn-random" id="standard-btn">[ STANDARD 15-20+B ]</button>
-      <button class="btn-random" id="random-btn">[ RANDOM 7 ]</button>
-    </div>
+    <button class="btn-random" id="random-btn">[ RANDOM 7 ]</button>
   </div>
 
   <div class="s-section">
     <span class="s-label">[ ROUND LIMIT ]</span>
     <div class="row2">
-      <input class="led-input-sm" type="number" id="max-rounds" value="20" min="0" max="99">
+      <input class="led-input-sm" type="number" id="max-rounds" value="0" min="0" max="99">
       <span class="row2-hint">max rounds per player<br>0 = unlimited</span>
     </div>
   </div>
@@ -79,7 +89,7 @@
 
   <div class="top-bar">
     <div style="display:flex;align-items:center">
-      <span class="game-logo">KRIKET BEZ BULZAJZ</span>
+      <span class="game-logo">CRICKET</span>
       <span class="r-badge" id="r-badge">R1</span>
     </div>
     <div class="top-btns">
@@ -108,11 +118,11 @@
       </div>
     </div>
 
-    <div class="mult-row" id="mult-row">
+    <!-- TRIPLE button removed; tap a number 3× to mark triple -->
+    <!-- <div class="mult-row" id="mult-row">
       <button class="mbtn active" data-m="1">SINGLE</button>
       <button class="mbtn" data-m="2">DOUBLE</button>
-      <button class="mbtn" data-m="3">TRIPLE</button>
-    </div>
+    </div> -->
 
     <div class="tgt-grid" id="tgt-grid"></div>
 
@@ -154,8 +164,12 @@ const ALL_NUMS  = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,'B'];
 
 let G    = {};
 let mult = 1;
-let selNums = new Set();
+let selNums = new Set([15, 16, 17, 18, 19, 20, 'B']);
 let selN    = 2;
+
+// Tap-to-triple state (turn-local, never persisted)
+let tapPending = null; // which target is currently accumulating taps
+let tapCount   = {};   // { target -> tap count } for the current turn
 
 /* ══════════════════════════════════════
    NUMBER PICKER
@@ -193,12 +207,6 @@ document.getElementById('random-btn').addEventListener('click', () => {
   buildNumGrid();
 });
 
-document.getElementById('standard-btn').addEventListener('click', () => {
-  selNums.clear();
-  [15, 16, 17, 18, 19, 20, 'B'].forEach(n => selNums.add(n));
-  buildNumGrid();
-});
-
 /* ══════════════════════════════════════
    SETUP
 ══════════════════════════════════════ */
@@ -230,7 +238,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   G.cutthroat  = document.getElementById('opt-ct').checked;
   G.maxRounds  = +document.getElementById('max-rounds').value;
 
-  const nums  = [...selNums].filter(n => n !== 'B').sort((a, b) => a - b);
+  const nums  = [...selNums].filter(n => n !== 'B').sort((a, b) => b - a);
   G.targets   = selNums.has('B') ? [...nums, 'B'] : nums;
 
   G.players.forEach(p => {
@@ -257,7 +265,7 @@ document.getElementById('resume-btn').addEventListener('click', () => {
 
 function freshState() {
   return {
-    players: [], targets: [], cutthroat: false, maxRounds: 20,
+    players: [], targets: [], cutthroat: false, maxRounds: 0,
     hits: {}, points: {},
     currentPlayer: 0, currentThrows: [], round: 1, history: []
   };
@@ -267,7 +275,9 @@ function freshState() {
    LAUNCH
 ══════════════════════════════════════ */
 function launch() {
-  mult = 1;
+  mult       = 1;
+  tapPending = null;
+  tapCount   = {};
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('game-screen').style.display  = 'flex';
   renderAll();
@@ -280,6 +290,7 @@ function renderAll() {
   renderBoard();
   renderTargets();
   renderSlots();
+  if (tapPending !== null) renderPendingTap();
   renderTurnName();
   renderBadge();
   document.querySelectorAll('#mult-row .mbtn').forEach(b =>
@@ -304,9 +315,13 @@ function renderBoard() {
     h += `<tr><td class="tc${bull ? ' bull' : ''}${allClosed ? ' done' : ''}">${bull ? 'B' : t}</td>`;
     G.players.forEach(p => {
       const isActive = p === cp;
+      // For the active player, add any uncommitted pending taps to the displayed hit count
+      // so dots appear immediately on each tap. G.hits is never mutated here — undo is unaffected.
+      const pendingExtra = (isActive && tapPending === t) ? (tapCount[t] || 0) : 0;
+      const displayHits  = G.hits[p][t] + pendingExtra;
       h += `<td class="mc${isActive ? ' ac' : ' other'}"${
         isActive ? ` onclick="tapCell('${p}','${t}')"` : ''
-      }>${dotsHtml(G.hits[p][t])}</td>`;
+      }>${dotsHtml(displayHits)}</td>`;
     });
     h += '</tr>';
   });
@@ -347,21 +362,22 @@ function renderTargets() {
     b.textContent    = bull ? 'BULL' : t;
 
     if (allClosed) {
-      // Everyone closed — tappable to record throw, no effect on score
       b.className = 'tbtn closed';
       b.addEventListener('click', function() {
-        doThrow(this.dataset.target === 'B' ? 'B' : +this.dataset.target, mult, true);
+        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
+        tapTarget(tgt, true);
       });
     } else if (cpClosed) {
-      // You closed it — amber scoring mode
       b.className = 'tbtn scoring';
       b.addEventListener('click', function() {
-        doThrow(this.dataset.target === 'B' ? 'B' : +this.dataset.target, mult);
+        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
+        tapTarget(tgt, false);
       });
     } else {
       b.className = bull ? 'tbtn bull' : 'tbtn';
       b.addEventListener('click', function() {
-        doThrow(this.dataset.target === 'B' ? 'B' : +this.dataset.target, mult);
+        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
+        tapTarget(tgt, false);
       });
     }
 
@@ -372,7 +388,11 @@ function renderTargets() {
   const miss = document.createElement('button');
   miss.className   = 'tbtn miss-btn';
   miss.textContent = 'MISS';
-  miss.addEventListener('click', () => doThrow(null, 0));
+  miss.addEventListener('click', () => {
+    // Committing a MISS flushes any pending tap first
+    commitPending(false);
+    doThrow(null, 0);
+  });
   g.appendChild(miss);
 }
 
@@ -392,6 +412,25 @@ function renderSlots() {
   }
 }
 
+/* Overlay the pending (uncommitted) tap on top of committed slots */
+function renderPendingTap() {
+  if (tapPending === null) return;
+  const slotIdx = G.currentThrows.length; // next empty slot
+  if (slotIdx >= 3) return;
+
+  const sl  = document.getElementById(`ts${slotIdx}`);
+  const c   = tapCount[tapPending] || 0;
+  const lbl = c > 1 ? `${c}×${tapPending}` : String(tapPending);
+  sl.textContent = lbl;
+  sl.className   = 'tslot pending';
+
+  // Highlight the tapped target button
+  document.querySelectorAll('#tgt-grid .tbtn').forEach(b => {
+    const t = b.dataset.target === 'B' ? 'B' : +b.dataset.target;
+    b.classList.toggle('tapping', t === tapPending);
+  });
+}
+
 function renderTurnName() {
   document.getElementById('turn-name').textContent = G.players[G.currentPlayer];
 }
@@ -403,10 +442,79 @@ function renderBadge() {
 }
 
 /* ══════════════════════════════════════
+   TAP-TO-TRIPLE LOGIC
+══════════════════════════════════════ */
+
+/*
+ * commitPending() — flush any outstanding 1- or 2-tap pending throw.
+ * Called when the user taps a *different* number, presses MISS,
+ * or switches the multiplier while a tap is in progress.
+ */
+function commitPending(dead) {
+  if (tapPending === null) return;
+  if (G.currentThrows.length < 3) {
+    doThrow(tapPending, tapCount[tapPending] || 1, dead);
+  }
+  tapCount   = {};
+  tapPending = null;
+}
+
+/*
+ * tapTarget(target, dead) — main entry point for all number button taps.
+ *
+ * Behaviour:
+ *   mult === 2 (DOUBLE active) → bypass tap logic, throw a double immediately.
+ *   mult === 1 (SINGLE / default):
+ *     - Tap same number again  → increment pending count (max 3).
+ *       On 3rd tap → commit as triple immediately.
+ *     - Tap different number   → commit pending first, then start fresh.
+ *     - 1st or 2nd tap        → show pending state; don't commit yet.
+ */
+function tapTarget(target, dead) {
+  if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
+
+  if (mult === 2) {
+    // DOUBLE button is active — skip tap accumulation, throw a double now
+    tapCount   = {};
+    tapPending = null;
+    doThrow(target, 2, dead);
+    return;
+  }
+
+  // --- SINGLE / tap-accumulation mode ---
+
+  if (tapPending !== null && tapPending !== target) {
+    // Switched to a different number — commit whatever is pending first
+    commitPending(dead);
+    // After committing, check if turn is already full
+    if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
+  }
+
+  // Accumulate tap on this target
+  tapPending = target;
+  tapCount[target] = (tapCount[target] || 0) + 1;
+
+  if (tapCount[target] >= 3) {
+    // Third tap — commit as triple immediately
+    tapCount   = {};
+    tapPending = null;
+    doThrow(target, 3, dead);
+  } else {
+    // 1st or 2nd tap — show pending state, wait for more taps
+    renderAll();
+    renderPendingTap();
+  }
+}
+
+/* ══════════════════════════════════════
    THROW LOGIC
 ══════════════════════════════════════ */
 function doThrow(target, m, dead) {
   if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
+
+  // Always clear tap state when a throw is committed
+  tapCount   = {};
+  tapPending = null;
 
   // Full snapshot for undo
   G.history.push({
@@ -422,16 +530,12 @@ function doThrow(target, m, dead) {
   if (target !== null && m > 0) {
     const cp = G.players[G.currentPlayer];
 
-    // Bull can only be single (25) or double (50) — no triple bull in real darts
-    if (target === 'B' && m > 2) { toast('NO TRIPLE BULL'); return; }
-
     if (dead) {
-      // Number fully closed by all — record for tracking, no game effect
       SFX.dead();
       G.currentThrows.push({ target, mult: m, scored: false, dead: true });
     } else {
       const prev        = G.hits[cp][target];
-      G.hits[cp][target] = prev + m;   // store uncapped so scoring math works
+      G.hits[cp][target] = prev + m;
 
       const closingHits = Math.max(0, Math.min(m, 3 - prev));
       const bonusHits   = m - closingHits;
@@ -439,12 +543,10 @@ function doThrow(target, m, dead) {
       if (bonusHits > 0) {
         const val = target === 'B' ? 25 : +target;
         if (G.cutthroat) {
-          // Add points to opponents who haven't closed
           G.players.forEach(p => {
             if (p !== cp && G.hits[p][target] < 3) G.points[p] += bonusHits * val;
           });
         } else {
-          // Add points to self if any opponent hasn't closed
           if (G.players.some(p => p !== cp && G.hits[p][target] < 3)) {
             G.points[cp] += bonusHits * val;
             scored = true;
@@ -452,7 +554,6 @@ function doThrow(target, m, dead) {
         }
       }
 
-      // Sound
       const justClosed = G.hits[cp][target] >= 3 && prev < 3;
       if (scored || (G.cutthroat && bonusHits > 0)) {
         SFX.score();
@@ -480,14 +581,19 @@ function doThrow(target, m, dead) {
 function tapCell(player, target) {
   if (player !== G.players[G.currentPlayer]) { toast('NOT YOUR TURN'); return; }
   const t = target === 'B' ? 'B' : +target;
-  doThrow(t, mult);
+  tapTarget(t, false);
 }
 
 /* ══════════════════════════════════════
    TURN / WIN
 ══════════════════════════════════════ */
 function nextPlayer() {
+  // Flush any pending tap before ending the turn
+  commitPending(false);
+
   G.currentThrows  = [];
+  tapCount         = {};
+  tapPending       = null;
   G.currentPlayer  = (G.currentPlayer + 1) % G.players.length;
   if (G.currentPlayer === 0) {
     G.round++;
@@ -559,14 +665,21 @@ document.getElementById('undo-btn').addEventListener('click', () => {
   G.currentThrows = s.currentThrows;
   G.currentPlayer = s.currentPlayer;
   G.round         = s.round;
-  mult = 1;
+  mult       = 1;
+  tapCount   = {};
+  tapPending = null;
   renderAll();
   toast('UNDONE');
 });
 
 document.querySelectorAll('#mult-row .mbtn').forEach(b => {
   b.addEventListener('click', () => {
-    mult = +b.dataset.m;
+    const newMult = +b.dataset.m;
+    // If a tap is in progress, commit it before switching multiplier
+    if (tapPending !== null) {
+      commitPending(false);
+    }
+    mult = newMult;
     document.querySelectorAll('#mult-row .mbtn').forEach(x =>
       x.classList.toggle('active', x === b)
     );
@@ -582,7 +695,7 @@ function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch(e) {}
 }
 </script>
-<script data-goatcounter="https://jucofuco.goatcounter.com/count"
-        async src="//gc.zgo.at/count.js"></script>
+<!-- <script data-goatcounter="https://jucofuco.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script> -->
 </body>
 </html>

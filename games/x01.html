@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>X01 · DARts</title>
+<title>X01 · Darts</title>
 <link rel="stylesheet" href="../common.css">
 
 <script src="../sfx.js"></script>
@@ -61,14 +61,6 @@
     <div class="row2">
       <input class="led-input-sm" type="number" id="max-rounds" value="0" min="0" max="99">
       <span class="row2-hint">max rounds per player<br>0 = unlimited</span>
-    </div>
-  </div>
-
-  <div class="s-section">
-    <span class="s-label">[ IN / OUT ]</span>
-    <div class="pill-row">
-      <label class="pill" id="pill-din"><input type="checkbox" id="opt-din"> DOUBLE IN</label>
-      <label class="pill" id="pill-dout"><input type="checkbox" id="opt-dout"> DOUBLE OUT</label>
     </div>
   </div>
 
@@ -192,14 +184,6 @@ document.getElementById('score-chips').addEventListener('click', e => {
   applyScoreChip(+c.dataset.s);
 });
 
-/* ── Double in/out pill toggles ── */
-document.getElementById('pill-din').querySelector('input').addEventListener('change', function() {
-  document.getElementById('pill-din').classList.toggle('on', this.checked);
-});
-document.getElementById('pill-dout').querySelector('input').addEventListener('change', function() {
-  document.getElementById('pill-dout').classList.toggle('on', this.checked);
-});
-
 /* ── Boot setup ── */
 applyScoreChip(urlStart);
 buildNameInputs('player-names', selN, 'PLAYER');
@@ -213,9 +197,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   G.players    = getNames('player-names', 'P');
   G.startScore  = selScore;
   G.maxRounds   = +document.getElementById('max-rounds').value;
-  G.doubleIn    = document.getElementById('opt-din').checked;
-  G.doubleOut   = document.getElementById('opt-dout').checked;
-  G.players.forEach(p => { G.scores[p] = selScore; G.history[p] = []; G.opened[p] = false; });
+  G.players.forEach(p => { G.scores[p] = selScore; G.history[p] = []; });
   launch();
 });
   if (window.goatcounter) {
@@ -234,8 +216,8 @@ document.getElementById('resume-btn').addEventListener('click', () => {
 
 function freshState() {
   return {
-    players: [], startScore: 501, maxRounds: 0, doubleIn: false, doubleOut: false,
-    scores: {}, history: {}, opened: {},
+    players: [], startScore: 501, maxRounds: 0,
+    scores: {}, history: {},
     currentPlayer: 0, currentThrows: [],
     round: 1, undoStack: []
   };
@@ -311,7 +293,7 @@ function renderBoard() {
     row.className = `x01-player-row${isActive ? ' active-row' : ''}`;
     row.innerHTML = `
       <div class="x01-left">
-        <div class="x01-pname">${p}${G.doubleIn && !G.opened[p] ? ' <span style="font-size:0.55rem;color:var(--led-red)">D-IN</span>' : ''}</div>
+        <div class="x01-pname">${p}</div>
         <div class="x01-remaining${rem <= 50 ? ' danger' : ''}">${rem}</div>
       </div>
       <div class="x01-right">
@@ -365,19 +347,6 @@ function doThrow(val, m) {
     return;
   }
 
-  // Double in check — player hasn't opened yet, must hit a double first
-  if (G.doubleIn && !G.opened[cp]) {
-    if (m !== 2) {
-      SFX.miss();
-      toast('DOUBLE IN — need a double to start!');
-      G.currentThrows.push(null);
-      mult = 1;
-      renderAll();
-      return;
-    }
-    G.opened[cp] = true;
-  }
-
   const score    = val * m;
   const cur      = G.scores[cp];
   const newScore = cur - score;
@@ -394,17 +363,6 @@ function doThrow(val, m) {
   }
 
   if (newScore === 0) {
-    // Double out check — finishing dart must be a double
-    if (G.doubleOut && m !== 2) {
-      SFX.bust();
-      bustFlash();
-      toast('DOUBLE OUT — must finish on a double!');
-      G.currentThrows.push({ val, mult: m, bust: true });
-      mult = 1;
-      renderAll();
-      setTimeout(() => nextPlayer(true), 900);
-      return;
-    }
     // Checkout!
     SFX.checkout();
     G.scores[cp] = 0;
@@ -514,7 +472,7 @@ function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch(e) {}
 }
 </script>
-<script data-goatcounter="https://jucofuco.goatcounter.com/count"
-        async src="//gc.zgo.at/count.js"></script>
+<!-- <script data-goatcounter="https://jucofuco.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script> -->
 </body>
 </html>
