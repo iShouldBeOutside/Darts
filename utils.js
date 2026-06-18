@@ -75,7 +75,7 @@ function getNames(containerId, fallbackPrefix) {
 function showWin(name, sub, onNewGame) {
   SFX.win();
   document.getElementById('win-name').textContent = name;
-  document.getElementById('win-sub').textContent = sub;
+  document.getElementById('win-sub').innerHTML = sub;
   document.getElementById('win-overlay').classList.add('show');
   document.getElementById('win-new-btn').onclick = onNewGame;
 }
