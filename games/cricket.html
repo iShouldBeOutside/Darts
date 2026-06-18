@@ -449,12 +449,13 @@ document.getElementById('mode-toggle').addEventListener('click', e => {
 /* ══════════════════════════════════════
    INITIAL BUILD
 ══════════════════════════════════════ */
-rebuildSlotsPreservingSelections();
-buildNumGrid();
-
-try {
-  if (localStorage.getItem(SAVE_KEY)) document.getElementById('resume-btn').style.display = '';
-} catch(e) {}
+document.addEventListener('DOMContentLoaded', () => {
+  rebuildSlotsPreservingSelections();
+  buildNumGrid();
+  try {
+    if (localStorage.getItem(SAVE_KEY)) document.getElementById('resume-btn').style.display = '';
+  } catch(e) {}
+});
 
 /* ══════════════════════════════════════
    START GAME
