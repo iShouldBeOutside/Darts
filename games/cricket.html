@@ -941,7 +941,7 @@ function doWin(winnerName, winnerIdx, subText) {
   // ── 3. Show the win overlay ───────────────────────────────────────────────
   showWin(
     winnerName,
-    subText + statsHtml,  // append stats table below the sub-text
+    `<div style="margin-bottom:0.5rem;letter-spacing:0.08em">${subText}</div>${statsHtml}`,
     () => {
       document.getElementById('win-overlay').classList.remove('show');
       location.reload();
