@@ -319,48 +319,16 @@ function allSlotStates() {
   }));
 }
 
-// buildAllPlayerSlots(n)
+// rebuildSlotsPreservingSelections(n)
 // Renders n player-selection dropdowns into #player-slots.
-// Called on page load and whenever the player count chip changes.
-function buildAllPlayerSlots(n) {
-  slots = [];
-  const container = document.getElementById('player-slots');
-  container.innerHTML = '';
-
-  for (let i = 0; i < n; i++) {
-    const wrapper = document.createElement('div');
-    wrapper.style.marginBottom = '0.4rem';
-    container.appendChild(wrapper);
-
-    // buildPlayerSlot is defined in players.js
-    // It renders itself into `wrapper` and returns { getPid, getName }
-    const slot = buildPlayerSlot(
-      wrapper,
-      i,
-      allSlotStates, // function reference so each slot can read siblings
-      () => {
-        // When any slot changes selection, re-render ALL slots.
-        // This updates which names are excluded from each slot's list.
-        buildAllPlayerSlots(n);
-        // But we don't want to lose the selections already made —
-        // so we only rebuild the slots that haven't been chosen yet.
-        // Actually: buildPlayerSlot starts fresh each time, so we store
-        // the selections BEFORE rebuilding and restore them after.
-        // See note below — we handle this with savedSelections.
-      }
-    );
-    slots.push(slot);
-  }
-}
-
-// Better version of buildAllPlayerSlots that preserves existing selections:
-// When a selection changes in one slot, we save all current selections,
-// rebuild all slots, then re-select what was already chosen.
+// Called on page load and whenever the player count chip changes
+// (changing the number of players is the one case where it's OK
+// to clear selections and start fresh).
+//
+// IMPORTANT: the 4th argument to buildPlayerSlot is an onChange callback
+// that fires every time a player is picked in THAT slot. We pass a no-op
+// here on purpose — see onSlotChange() below for why.
 function rebuildSlotsPreservingSelections() {
-  // 1. Save current selections before clearing
-  const saved = slots.map(s => s ? { pid: s.getPid(), name: s.getName() } : null);
-
-  // 2. Clear and rebuild empty slots
   const n = selN;
   slots = [];
   const container = document.getElementById('player-slots');
@@ -375,15 +343,28 @@ function rebuildSlotsPreservingSelections() {
       wrapper,
       i,
       allSlotStates,
-      rebuildSlotsPreservingSelections  // callback to rebuild on any change
+      onSlotChange
     );
     slots.push(slot);
   }
+}
 
-  // 3. We can't forcibly set a slot's selection from outside (the selection
-  //    state is inside buildPlayerSlot's closure). For simplicity in phase 1,
-  //    we accept that changing player count clears selections.
-  //    This is fine UX — changing player count is rare and happens before play.
+// onSlotChange()
+// Fires whenever ANY slot's selection changes (a player picked, Guest
+// picked, or a brand-new player saved & selected).
+//
+// We deliberately do NOT rebuild the slots here. Each slot keeps its own
+// selection in a local variable inside buildPlayerSlot — rebuilding would
+// throw that variable away and reset the slot back to "— SELECT PLAYER —"
+// the instant you chose someone (this was the bug: picking a player or
+// Guest never "stuck").
+//
+// Sibling exclusion (not letting the same player appear in two slots)
+// still works fine without a rebuild: every time a slot's OWN dropdown is
+// opened, it calls allSlotStates() fresh to see what siblings currently
+// have selected. So there's nothing else this function needs to do.
+function onSlotChange() {
+  // Intentionally empty — see comment above.
 }
 
 /* ══════════════════════════════════════
