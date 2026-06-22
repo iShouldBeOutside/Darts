@@ -845,6 +845,13 @@ function checkWin() {
   const cp = G.players[G.currentPlayer];
   if (!G.targets.every(t => G.hits[cp][t] >= 3)) return;
 
+  // The game is ending on this player's CURRENT round, but G.rounds[cp] only
+  // gets incremented inside nextPlayer() — which never runs for the round
+  // that wins the game. Without this, the final round's marks would still
+  // count toward MPR, but the round itself wouldn't, inflating MPR.
+  // So we count this final round here, exactly like nextPlayer() would have.
+  G.rounds[cp] = (G.rounds[cp] || 0) + 1;
+
   // ── Hit-only win condition ────────────────────────────────────────────────
   // In hit-only, first to close all numbers wins immediately — no point check.
   if (G.hitOnly) {
@@ -861,6 +868,9 @@ function checkWin() {
   if (wins) {
     doWin(cp, G.currentPlayer, `ALL CLOSED  ${myPts} PTS`);
   } else if (!G.cutthroat) {
+    // Didn't actually win yet (cutthroat opponents still scoring under us) —
+    // undo the round bump above since the game isn't over.
+    G.rounds[cp] = G.rounds[cp] - 1;
     toast('CLOSED! KEEP SCORING');
   }
 }
