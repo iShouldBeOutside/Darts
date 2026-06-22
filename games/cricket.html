@@ -626,6 +626,7 @@ function renderTargets() {
   miss.className   = 'tbtn miss-btn';
   miss.textContent = 'MISS';
   miss.addEventListener('click', () => {
+    pushHistory(); // NEW: snapshot BEFORE this tap
     commitPending(false);
     doThrow(null, 0);
   });
@@ -685,8 +686,31 @@ function commitPending(dead) {
   tapPending = null;
 }
 
+// pushHistory()
+// Saves a full snapshot of the game state — INCLUDING the in-progress
+// tap-to-triple state (tapPending / tapCount) — onto G.history.
+// Called once at the start of every player action (a number tap, a MISS
+// tap, or pressing NEXT) so that pressing UNDO always reverts exactly the
+// last action taken, even if that action was only a pending tap that
+// hadn't turned into a committed throw yet.
+function pushHistory() {
+  G.history.push({
+    hits:          JSON.parse(JSON.stringify(G.hits)),
+    points:        JSON.parse(JSON.stringify(G.points)),
+    marks:         JSON.parse(JSON.stringify(G.marks)),
+    rounds:        JSON.parse(JSON.stringify(G.rounds)),
+    currentThrows: JSON.parse(JSON.stringify(G.currentThrows)),
+    currentPlayer: G.currentPlayer,
+    round:         G.round,
+    tapPending:    tapPending,
+    tapCount:      JSON.parse(JSON.stringify(tapCount)),
+  });
+}
+
 function tapTarget(target, dead) {
   if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
+
+  pushHistory(); // NEW: snapshot BEFORE this tap, so Undo reverts just this tap
 
   if (mult === 2) {
     tapCount   = {};
@@ -722,16 +746,10 @@ function doThrow(target, m, dead) {
   tapCount   = {};
   tapPending = null;
 
-  // Full snapshot for undo — now includes marks and rounds
-  G.history.push({
-    hits:          JSON.parse(JSON.stringify(G.hits)),
-    points:        JSON.parse(JSON.stringify(G.points)),
-    marks:         JSON.parse(JSON.stringify(G.marks)),    // NEW
-    rounds:        JSON.parse(JSON.stringify(G.rounds)),   // NEW
-    currentThrows: JSON.parse(JSON.stringify(G.currentThrows)),
-    currentPlayer: G.currentPlayer,
-    round:         G.round,
-  });
+  // NOTE: no history snapshot here anymore. Snapshots are now taken once
+  // per user action — see pushHistory() — at the top of tapTarget(), the
+  // MISS handler, and nextPlayer(), so every tap is individually undoable
+  // (including pending taps that haven't committed into a throw yet).
 
   let scored = false;
 
@@ -806,6 +824,7 @@ function tapCell(player, target) {
    TURN / WIN
 ══════════════════════════════════════ */
 function nextPlayer() {
+  pushHistory(); // NEW: snapshot BEFORE this action
   commitPending(false);
 
   // ── Increment round counter for the player who just finished ──
@@ -956,14 +975,14 @@ document.getElementById('undo-btn').addEventListener('click', () => {
   const s         = G.history.pop();
   G.hits          = s.hits;
   G.points        = s.points;
-  G.marks         = s.marks;    // NEW: restore marks on undo
-  G.rounds        = s.rounds;   // NEW: restore rounds on undo
+  G.marks         = s.marks;
+  G.rounds        = s.rounds;
   G.currentThrows = s.currentThrows;
   G.currentPlayer = s.currentPlayer;
   G.round         = s.round;
   mult       = 1;
-  tapCount   = {};
-  tapPending = null;
+  tapPending      = s.tapPending; // NEW: restore pending tap (was being wiped before)
+  tapCount        = s.tapCount;   // NEW: restore pending tap counts
   renderAll();
   toast('UNDONE');
 });
