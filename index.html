@@ -157,6 +157,7 @@
 
 <script src="sfx.js"></script>
 <script src="utils.js"></script>
+<script src="players.js"></script>
 </head>
 <body>
 
@@ -176,6 +177,20 @@
     <span class="theme-lbl">DARK</span>
     <div class="theme-toggle" id="theme-toggle"></div>
     <span class="theme-lbl">BRIGHT</span>
+  </div>
+
+  <!-- Stats -->
+  <div class="hub-section">
+    <div class="hub-section-lbl">[ STATS ]</div>
+
+    <a class="game-card" href="stats.html">
+      <div class="card-icon">📊</div>
+      <div class="card-body">
+        <div class="card-title">STATS</div>
+        <div class="card-desc">Leaderboards · personal averages · player comparisons</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </a>
   </div>
 
   <!-- Cricket -->
@@ -295,12 +310,31 @@
 
 </div>
 
+<!-- ── First-launch device-owner prompt ──────────────────────────────────────
+     Hidden by default (no "show" class). JS below adds "show" only if
+     showOwnerSetupIfNeeded() (in players.js) decides a prompt is needed:
+     no device owner set yet, AND at least one player already exists. -->
+<div class="owner-modal-overlay" id="owner-modal-overlay">
+  <div class="owner-modal-panel" id="owner-modal-panel"></div>
+</div>
+
 <script>
   // ── Existing theme logic (unchanged) ──────────────────────────────────────
   initTheme();
   document.getElementById('theme-toggle').addEventListener('click', () => {
     toggleTheme();
     SFX.hit();
+  });
+
+  // ── First-launch device owner prompt ──────────────────────────────────────
+  // showOwnerSetupIfNeeded (from players.js) checks on its own whether a
+  // prompt is actually needed. If not, it calls our callback immediately
+  // and renders nothing inside the panel — so it's safe to always call this.
+  const ownerOverlay = document.getElementById('owner-modal-overlay');
+  const ownerPanel   = document.getElementById('owner-modal-panel');
+  ownerOverlay.classList.add('show');           // reveal the overlay
+  showOwnerSetupIfNeeded(ownerPanel, () => {
+    ownerOverlay.classList.remove('show');      // hide it once done/skipped
   });
 
   // ── PWA: Register the service worker ─────────────────────────────────────

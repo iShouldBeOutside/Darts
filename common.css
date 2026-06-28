@@ -634,3 +634,55 @@ body.theme-bright .theme-toggle::after { left: 29px; background: var(--led-amber
 .qr-code:hover {
     transform: scale(1.05);
 }
+
+/* ═══ OWNER SETUP MODAL (hub first-launch prompt) ═══ */
+.owner-modal-overlay {
+  display: none;                  /* hidden by default — JS adds .show */
+  position: fixed;
+  inset: 0;
+  background: rgba(5,5,6,0.96);   /* same scrim as #win-overlay */
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  padding: 1.4rem;
+  backdrop-filter: blur(8px);
+}
+body.theme-bright .owner-modal-overlay { background: rgba(200,196,180,0.96); }
+.owner-modal-overlay.show { display: flex; }
+
+.owner-modal-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 1.4rem 1.2rem;
+  max-width: 360px;
+  width: 100%;
+}
+
+.owner-hint {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}
+
+#owner-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+/* .chip is normally a fixed 50x50 number button (see NUMBER PICKER section
+   above). Inside this prompt it holds a full player name, so widen it to
+   fit text instead of a fixed square. Scoped to .owner-setup so it doesn't
+   affect the cricket number picker elsewhere. */
+.owner-setup .chip {
+  width: auto;
+  height: auto;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  border-radius: 0.4rem;
+}
