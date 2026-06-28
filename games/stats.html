@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>STATS · Darts</title>
+<link rel="stylesheet" href="common.css">
+<style>
+/* ═══ TAB STRIP (LEADERBOARD / MY STATS / COMPARE) ═══ */
+.tab-row { display: flex; gap: 0.4rem; margin-bottom: 1.2rem; }
+.tab-btn {
+  flex: 1;
+  text-align: center;
+  padding: 0.6rem 0.3rem;
+  font-family: var(--seg);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.tab-btn.on {
+  border-color: var(--led-red);
+  color: var(--led-red);
+  box-shadow: 0 0 6px var(--led-red-glow);
+  text-shadow: 0 0 8px var(--led-red-glow);
+}
+
+/* ═══ "AUTO WIDTH" CHIP — .chip in common.css is a fixed 50x50 square
+   meant for single digits. We reuse the same look for text labels
+   (player names, variant names) by overriding the box to hug its text
+   instead. Scoped to this page only via the .chip-auto class. ═══ */
+.chip-auto {
+  width: auto;
+  height: auto;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  border-radius: 0.4rem;
+}
+
+/* ═══ GAME HISTORY ROW (used in the My Stats recent-games list) ═══ */
+.hist-row {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.45rem;
+}
+.hist-top { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.hist-result {
+  font-size: 0.66rem; font-weight: bold;
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.hist-result.win  { background: var(--led-green-dim); color: var(--led-green); box-shadow: 0 0 6px var(--led-green-glow); }
+.hist-result.loss { background: var(--led-red-dim);   color: var(--led-red);   box-shadow: 0 0 6px var(--led-red-glow); }
+.hist-type { font-size: 0.66rem; color: var(--text-dim); letter-spacing: 0.08em; flex: 1; }
+.hist-date { font-size: 0.6rem; color: var(--text-dim); }
+.hist-bottom { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.3rem; font-size: 0.7rem; }
+.hist-opp  { color: var(--text-dim); }
+.hist-stat { color: var(--led-amber); }
+
+.lb-empty-msg {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  padding: 2rem 1rem;
+  line-height: 1.6;
+}
+</style>
+
+<script src="sfx.js"></script>
+<script src="utils.js"></script>
+<script src="players.js"></script>
+</head>
+<body>
+
+<div class="setup-wrap">
+
+  <!-- ── Top bar: back to hub + page title + theme toggle ── -->
+  <div class="setup-top">
+    <a class="back-btn" href="index.html">◂ HUB</a>
+    <div class="setup-title" style="flex:1">STATS</div>
+    <button class="theme-btn" id="theme-btn">☀</button>
+  </div>
+
+  <!-- ── Tab strip ── -->
+  <div class="tab-row">
+    <div class="tab-btn on" id="tabbtn-leaderboard">LEADERBOARD</div>
+    <div class="tab-btn" id="tabbtn-mystats">MY STATS</div>
+    <div class="tab-btn" id="tabbtn-compare">COMPARE</div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 1: LEADERBOARD
+  ══════════════════════════════════════ -->
+  <div id="tab-leaderboard">
+
+    <div class="s-section">
+      <span class="s-label">[ GAME TYPE ]</span>
+      <div class="chip-row" id="lb-gametype-pills">
+        <div class="chip chip-auto on" data-type="cricket">CRICKET</div>
+        <div class="chip chip-auto" data-type="x01">X01</div>
+      </div>
+    </div>
+
+    <div class="s-section">
+      <span class="s-label">[ VARIANT ]</span>
+      <div class="chip-row" id="lb-variant-pills"></div>
+    </div>
+
+    <div class="s-section">
+      <span class="s-label">[ MIN GAMES ]</span>
+      <select class="led-input" id="lb-min-games" style="max-width:160px">
+        <option value="0">ALL</option>
+        <option value="1">1+</option>
+        <option value="5">5+</option>
+        <option value="10">10+</option>
+        <option value="20">20+</option>
+        <option value="50">50+</option>
+      </select>
+    </div>
+
+    <div class="s-section">
+      <span class="s-label">[ FILTER PLAYERS ] <span style="color:var(--text-dim);text-transform:none;letter-spacing:0">(none = show all)</span></span>
+      <div class="chip-row" id="lb-player-pills"></div>
+    </div>
+
+    <div id="lb-table-wrap"></div>
+    <div class="lb-empty-msg" id="lb-empty" style="display:none"></div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 2: MY STATS
+  ══════════════════════════════════════ -->
+  <div id="tab-mystats" style="display:none">
+    <div id="mystats-content"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 3: COMPARE
+  ══════════════════════════════════════ -->
+  <div id="tab-compare" style="display:none">
+    <div class="s-section">
+      <span class="s-label">[ SELECT 2+ PLAYERS ]</span>
+      <div class="chip-row" id="cmp-player-pills"></div>
+    </div>
+    <div id="cmp-result"></div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ── Theme (same pattern as every other page) ── */
+initTheme();
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('theme-btn').addEventListener('click', () => {
+    toggleTheme();
+    SFX.hit();
+  });
+});
+
+/* ── Small safety helper: escapes player-typed text before it goes into
+   innerHTML, so a name like "<b>Bob</b>" can't break the page layout. ── */
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+/* ══════════════════════════════════════
+   TAB SWITCHING
+══════════════════════════════════════ */
+const TABS = ['leaderboard', 'mystats', 'compare'];
+
+function switchTab(name) {
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).style.display = (t === name) ? 'block' : 'none';
+    document.getElementById('tabbtn-' + t).classList.toggle('on', t === name);
+  });
+  if (name === 'mystats') renderMyStats();
+  if (name === 'compare') { renderComparePills(); renderCompareResult(); }
+}
+
+/* ══════════════════════════════════════
+   SHARED: build a row of player-name chips
+   containerId  → element to render into
+   selectedSet  → a Set of pids currently toggled "on"
+   onToggle     → called after every click (re-render whatever depends on it)
+══════════════════════════════════════ */
+function renderPlayerPills(containerId, selectedSet, onToggle) {
+  const playersObj = getPlayers();
+  const wrap = document.getElementById(containerId);
+  wrap.innerHTML = '';
+
+  const list = Object.values(playersObj).sort((a, b) => a.name.localeCompare(b.name));
+
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="row2-hint">NO PLAYERS YET — ADD ONE FROM ANY GAME SCREEN.</div>';
+    return;
+  }
+
+  list.forEach(p => {
+    const chip = document.createElement('div');
+    chip.className = 'chip chip-auto' + (selectedSet.has(p.pid) ? ' on' : '');
+    chip.textContent = displayName(p, playersObj);
+    chip.addEventListener('click', () => {
+      if (selectedSet.has(p.pid)) selectedSet.delete(p.pid);
+      else selectedSet.add(p.pid);
+      onToggle();
+    });
+    wrap.appendChild(chip);
+  });
+}
+
+/* ══════════════════════════════════════
+   SHARED: render one row of a game-history list
+   (used by the My Stats recent-games section)
+══════════════════════════════════════ */
+function statRowText(game, pid) {
+  const r = game.results[pid];
+  if (!r) return '';
+  if (game.gameType === 'cricket') {
+    return `${r.marks || 0} MARKS / ${r.rounds || 0} RDS · ${r.mpr != null ? r.mpr : 0} MPR`;
+  }
+  // x01 result field names per players.js's logGame() doc comment
+  return `${r.pointsScored || 0} PTS / ${r.dartsThrown || 0} DARTS · ${r.ppd != null ? r.ppd : 0} PPD`;
+}
+
+function variantLabel(game) {
+  const type = game.gameType === 'cricket' ? 'CRICKET' : 'X01';
+  return `${type} · ${String(game.variant).toUpperCase()}`;
+}
+
+function opponentNames(game, viewerPid) {
+  const names = game.players.filter(p => p.pid !== viewerPid).map(p => p.name);
+  return names.length ? names.join(', ') : '—';
+}
+
+function renderHistRow(game, viewerPid) {
+  const won = game.winner === viewerPid;
+  const dateStr = new Date(game.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return `
+    <div class="hist-row">
+      <div class="hist-top">
+        <span class="hist-result ${won ? 'win' : 'loss'}">${won ? 'W' : 'L'}</span>
+        <span class="hist-type">${variantLabel(game)}</span>
+        <span class="hist-date">${dateStr}</span>
+      </div>
+      <div class="hist-bottom">
+        <span class="hist-opp">vs ${escapeHtml(opponentNames(game, viewerPid))}</span>
+        <span class="hist-stat">${statRowText(game, viewerPid)}</span>
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════
+   TAB 1: LEADERBOARD
+══════════════════════════════════════ */
+let lbGameType = 'cricket';
+let lbVariant  = 'all';
+let lbSelectedPids = new Set();
+
+// Cricket's variants are known and live today, so we hardcode them.
+const CRICKET_VARIANTS = [
+  { key: 'all',       label: 'ALL' },
+  { key: 'regular',   label: 'REGULAR' },
+  { key: 'cutthroat', label: 'CUTTHROAT' },
+  { key: 'hit-only',  label: 'HIT-ONLY' },
+];
+
+// x01.html doesn't log games yet, so instead of guessing a future variant
+// naming scheme, we just read whatever variant strings actually show up
+// in darts_games for gameType 'x01'. Today this list will be empty.
+function getX01VariantChips() {
+  const seen = new Set(getGames().filter(g => g.gameType === 'x01').map(g => g.variant));
+  const chips = [{ key: 'all', label: 'ALL' }];
+  seen.forEach(v => chips.push({ key: v, label: String(v).toUpperCase() }));
+  return chips;
+}
+
+function renderVariantChips() {
+  const variants = lbGameType === 'cricket' ? CRICKET_VARIANTS : getX01VariantChips();
+
+  // If the variant we had selected no longer applies (e.g. switched game type), reset it.
+  if (!variants.some(v => v.key === lbVariant)) lbVariant = 'all';
+
+  const wrap = document.getElementById('lb-variant-pills');
+  wrap.innerHTML = '';
+  variants.forEach(v => {
+    const chip = document.createElement('div');
+    chip.className = 'chip chip-auto' + (v.key === lbVariant ? ' on' : '');
+    chip.textContent = v.label;
+    chip.addEventListener('click', () => {
+      lbVariant = v.key;
+      renderVariantChips();
+      renderLeaderboardTable();
+    });
+    wrap.appendChild(chip);
+  });
+}
+
+// Counts games + wins for one player under the current game type / variant filter.
+function countGamesAndWins(pid, gameType, variant) {
+  let games = 0;
+  let wins  = 0;
+  getGames().forEach(g => {
+    if (g.gameType !== gameType) return;
+    if (variant !== 'all' && g.variant !== variant) return;
+    const r = g.results[pid];
+    if (!r) return;
+    games++;
+    if (g.winner === pid) wins++;
+  });
+  return { games, wins };
+}
+
+function computeLeaderboardRows(gameType, variant, minGames, selectedPids) {
+  const playersObj = getPlayers();
+  const rows = [];
+
+  Object.values(playersObj).forEach(p => {
+    if (selectedPids.size > 0 && !selectedPids.has(p.pid)) return; // player-filter chips active and this one isn't picked
+
+    const { games, wins } = countGamesAndWins(p.pid, gameType, variant);
+    if (games < minGames) return;
+
+    const metric = gameType === 'cricket'
+      ? getCareerMPR(p.pid, variant === 'all' ? null : variant)
+      : getCareerPPD(p.pid, variant === 'all' ? null : variant);
+
+    rows.push({ pid: p.pid, name: displayName(p, playersObj), metric, games, wins });
+  });
+
+  // Highest metric first; players with no data (null) sink to the bottom; ties broken alphabetically.
+  rows.sort((a, b) => {
+    if (a.metric === null && b.metric === null) return a.name.localeCompare(b.name);
+    if (a.metric === null) return 1;
+    if (b.metric === null) return -1;
+    if (b.metric !== a.metric) return b.metric - a.metric;
+    return a.name.localeCompare(b.name);
+  });
+
+  return rows;
+}
+
+function renderLeaderboardTable() {
+  const totalOfType = getGames().filter(g => g.gameType === lbGameType).length;
+  const tableWrap = document.getElementById('lb-table-wrap');
+  const emptyWrap = document.getElementById('lb-empty');
+
+  // No games of this type logged at all yet — show a clean empty state
+  // instead of a table full of dashes. This is what currently happens
+  // for X01 until x01.html starts calling logGame().
+  if (totalOfType === 0) {
+    tableWrap.style.display = 'none';
+    emptyWrap.style.display = 'block';
+    emptyWrap.textContent = lbGameType === 'x01'
+      ? '🎯 NO X01 GAMES LOGGED YET — x01.html doesn\'t track stats yet. Check back once it does.'
+      : 'NO GAMES LOGGED YET.';
+    return;
+  }
+  emptyWrap.style.display = 'none';
+  tableWrap.style.display = 'block';
+
+  const minGames = +document.getElementById('lb-min-games').value;
+  const rows = computeLeaderboardRows(lbGameType, lbVariant, minGames, lbSelectedPids);
+  const metricLabel = lbGameType === 'cricket' ? 'MPR' : 'PPD';
+
+  let html = `<div style="overflow-x:auto"><table class="score-table"><thead><tr>
+    <th>#</th><th>PLAYER</th><th>${metricLabel}</th><th>GAMES</th><th>WINS</th>
+  </tr></thead><tbody>`;
+
+  if (rows.length === 0) {
+    html += `<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--text-dim)">NO PLAYERS MATCH THESE FILTERS</td></tr>`;
+  } else {
+    rows.forEach((r, i) => {
+      html += `<tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td><a href="profile.html?pid=${encodeURIComponent(r.pid)}" style="color:inherit;text-decoration:none">${escapeHtml(r.name)}</a></td>
+        <td style="text-align:center;color:var(--led-amber)">${r.metric !== null ? r.metric : '—'}</td>
+        <td style="text-align:center">${r.games}</td>
+        <td style="text-align:center">${r.wins}</td>
+      </tr>`;
+    });
+  }
+  html += '</tbody></table></div>';
+  tableWrap.innerHTML = html;
+}
+
+/* ══════════════════════════════════════
+   TAB 2: MY STATS
+══════════════════════════════════════ */
+function renderMyStats() {
+  const container = document.getElementById('mystats-content');
+  const ownerPid = getDeviceOwnerPid();
+
+  if (!ownerPid) {
+    container.innerHTML = `<div class="s-label">[ WHOSE PHONE IS THIS? ]</div><div id="mystats-owner-pick"></div>`;
+    const pickWrap = document.getElementById('mystats-owner-pick');
+    // Reuses the exact same first-launch picker already wired up in
+    // players.js, instead of building a second version of it.
+    showOwnerSetupIfNeeded(pickWrap, () => renderMyStats());
+    return;
+  }
+
+  const playersObj = getPlayers();
+  const owner = playersObj[ownerPid];
+  if (!owner) {
+    container.innerHTML = `<div class="row2-hint">Device owner profile no longer exists. <a href="profile.html" style="color:var(--led-amber)">Pick a player</a> and set them as owner again.</div>`;
+    return;
+  }
+
+  const ownerGames = getGames().filter(g => g.players.some(p => p.pid === ownerPid));
+  const winCount  = ownerGames.filter(g => g.winner === ownerPid).length;
+  const lossCount = ownerGames.length - winCount;
+  const winPct    = ownerGames.length > 0 ? Math.round((winCount / ownerGames.length) * 100) + '%' : '—';
+
+  const fmt = v => v !== null ? v : '—';
+  const mprAll = getCareerMPR(ownerPid, null);
+  const mprReg = getCareerMPR(ownerPid, 'regular');
+  const mprCut = getCareerMPR(ownerPid, 'cutthroat');
+  const mprHit = getCareerMPR(ownerPid, 'hit-only');
+  const ppdAll = getCareerPPD(ownerPid, null);
+
+  const recent = ownerGames.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
+
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div>
+        <div class="setup-title" style="font-size:1.3rem">${escapeHtml(displayName(owner, playersObj))}</div>
+        <div class="row2-hint">${ownerGames.length} GAMES · ${winCount}W-${lossCount}L (${winPct})</div>
+      </div>
+      <button class="btn-undo" id="mystats-change-owner" style="width:auto;padding:0.5rem 0.8rem">CHANGE</button>
+    </div>
+
+    <div class="s-label">[ CRICKET — CAREER MPR ]</div>
+    <div style="overflow-x:auto">
+      <table class="score-table" style="margin-bottom:1.2rem">
+        <thead><tr><th>ALL</th><th>REGULAR</th><th>CUTTHROAT</th><th>HIT-ONLY</th></tr></thead>
+        <tbody><tr>
+          <td style="text-align:center;color:var(--led-amber)">${fmt(mprAll)}</td>
+          <td style="text-align:center">${fmt(mprReg)}</td>
+          <td style="text-align:center">${fmt(mprCut)}</td>
+          <td style="text-align:center">${fmt(mprHit)}</td>
+        </tr></tbody>
+      </table>
+    </div>
+
+    <div class="s-label">[ X01 — CAREER PPD ]</div>
+    <div class="row2-hint" style="margin-bottom:1.2rem">
+      ${ppdAll !== null ? `<span style="color:var(--led-amber);font-size:1.2rem">${ppdAll}</span> PPD` : 'NO X01 GAMES LOGGED YET'}
+    </div>
+
+    <div class="s-label">[ RECENT GAMES ]</div>
+    <div id="mystats-recent-list">
+      ${recent.length === 0
+        ? '<div class="row2-hint">NO GAMES LOGGED YET.</div>'
+        : recent.map(g => renderHistRow(g, ownerPid)).join('')}
+    </div>
+  `;
+
+  container.innerHTML = html;
+
+  document.getElementById('mystats-change-owner').addEventListener('click', () => {
+    // setDeviceOwnerPid('') stores an empty string. getDeviceOwnerPid() does
+    // `localStorage.getItem(...) || null`, and '' is falsy — so this is
+    // read back as "no owner set", which re-opens the picker below.
+    setDeviceOwnerPid('');
+    renderMyStats();
+  });
+}
+
+/* ══════════════════════════════════════
+   TAB 3: COMPARE
+══════════════════════════════════════ */
+let cmpSelectedPids = new Set();
+
+function renderComparePills() {
+  renderPlayerPills('cmp-player-pills', cmpSelectedPids, () => {
+    renderComparePills();
+    renderCompareResult();
+  });
+}
+
+function renderCompareResult() {
+  const wrap = document.getElementById('cmp-result');
+  const pids = [...cmpSelectedPids];
+
+  if (pids.length < 2) {
+    wrap.innerHTML = `<div class="row2-hint" style="margin-top:0.6rem">SELECT AT LEAST 2 PLAYERS ABOVE TO COMPARE.</div>`;
+    return;
+  }
+
+  const playersObj = getPlayers();
+  const statRows = [
+    { label: 'CRICKET MPR (ALL)',       fn: pid => getCareerMPR(pid, null) },
+    { label: 'CRICKET MPR (REGULAR)',   fn: pid => getCareerMPR(pid, 'regular') },
+    { label: 'CRICKET MPR (CUTTHROAT)', fn: pid => getCareerMPR(pid, 'cutthroat') },
+    { label: 'CRICKET MPR (HIT-ONLY)',  fn: pid => getCareerMPR(pid, 'hit-only') },
+    { label: 'X01 PPD (ALL)',           fn: pid => getCareerPPD(pid, null) },
+  ];
+
+  let html = '<div style="overflow-x:auto"><table class="score-table"><thead><tr><th></th>';
+  pids.forEach(pid => {
+    html += `<th>${escapeHtml(displayName(playersObj[pid], playersObj))}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  statRows.forEach(stat => {
+    html += `<tr><td style="text-align:left;color:var(--text-dim);font-size:0.62rem;letter-spacing:0.05em">${stat.label}</td>`;
+    pids.forEach(pid => {
+      const v = stat.fn(pid);
+      html += `<td style="text-align:center;color:var(--led-amber)">${v !== null ? v : '—'}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  // Head-to-head: only count games where every selected player was present together.
+  const sharedGames = getGames().filter(g => pids.every(pid => g.players.some(p => p.pid === pid)));
+  html += `<tr><td style="text-align:left;color:var(--text-dim);font-size:0.62rem;letter-spacing:0.05em">H2H WINS (${sharedGames.length} SHARED)</td>`;
+  pids.forEach(pid => {
+    const wins = sharedGames.filter(g => g.winner === pid).length;
+    html += `<td style="text-align:center">${wins}</td>`;
+  });
+  html += '</tr></tbody></table></div>';
+
+  wrap.innerHTML = html;
+}
+
+/* ══════════════════════════════════════
+   BOOT
+══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('tabbtn-leaderboard').addEventListener('click', () => switchTab('leaderboard'));
+  document.getElementById('tabbtn-mystats').addEventListener('click', () => switchTab('mystats'));
+  document.getElementById('tabbtn-compare').addEventListener('click', () => switchTab('compare'));
+
+  document.getElementById('lb-gametype-pills').addEventListener('click', e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    lbGameType = c.dataset.type;
+    document.querySelectorAll('#lb-gametype-pills .chip').forEach(x => x.classList.toggle('on', x === c));
+    renderVariantChips();
+    renderLeaderboardTable();
+  });
+
+  document.getElementById('lb-min-games').addEventListener('change', renderLeaderboardTable);
+
+  renderVariantChips();
+  renderPlayerPills('lb-player-pills', lbSelectedPids, renderLeaderboardTable);
+  renderLeaderboardTable();
+});
+</script>
+
+</body>
+</html>
