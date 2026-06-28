@@ -298,7 +298,7 @@ let selNums = new Set([15, 16, 17, 18, 19, 20, 'B']);
 let selN    = 2;
 
 // gameMode holds which of the 3 modes is active: 'regular', 'cutthroat', 'hit-only'
-let gameMode = 'regular';
+let gameMode = 'hit-only';
 
 // Tap-to-triple state (turn-local, never persisted)
 let tapPending = null;
@@ -458,6 +458,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   G.playerPids = selections.slice(0, selN).map(s => s.pid);
 
   // Store which mode we're playing
+  G.regular    = gameMode === 'regular';
   G.cutthroat  = gameMode === 'cutthroat';
   G.hitOnly    = gameMode === 'hit-only';
   G.variant    = gameMode; // 'regular', 'cutthroat', or 'hit-only'
