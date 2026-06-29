@@ -4,6 +4,7 @@
    THEME — DARK (default) + BRIGHT
 ═══════════════════════════════════════ */
 :root {
+  --test-debug: red; /* REMOVE ME AFTER TESTING */
   --cab:           #0a0a0c;
   --panel:         #0f0f12;
   --border:        #222228;
@@ -57,6 +58,7 @@ html, body {
 }
 
 body {
+  border: 3px solid red; /* REMOVE ME AFTER TESTING */
   font-family: var(--seg);
   background: var(--cab);
   color: var(--text-bright);
