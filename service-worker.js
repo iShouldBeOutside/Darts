@@ -6,7 +6,7 @@
 // ── 1. CACHE NAME ──────────────────────────────────────────────────────────
 // Change the version string (e.g. "v2") whenever you deploy an update.
 // This forces old caches to be cleared automatically.
-const CACHE_NAME = "darts-cache-v1";
+const CACHE_NAME = "darts-cache-v2";
 
 // ── 2. FILES TO PRE-CACHE ON INSTALL ───────────────────────────────────────
 // These are fetched and stored the moment the PWA is first installed.
