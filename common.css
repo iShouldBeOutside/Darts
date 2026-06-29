@@ -300,8 +300,7 @@ body {
 .game-wrap {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  overflow: hidden;
+  min-height: 100dvh;
 }
 
 .top-bar {
