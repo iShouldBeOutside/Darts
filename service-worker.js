@@ -81,8 +81,15 @@ self.addEventListener("fetch", (event) => {
   // Skip requests outside our app's scope (e.g. analytics, external CDNs)
   if (!event.request.url.startsWith(self.location.origin)) return;
 
+  // For CSS files, force a fresh fetch by adding a timestamp query string
+  // This bypasses HTTP caching and ensures style updates are always fresh
+  let fetchUrl = event.request.url;
+  if (event.request.url.includes("common.css")) {
+    fetchUrl = event.request.url + (event.request.url.includes("?") ? "&" : "?") + "t=" + Date.now();
+  }
+
   event.respondWith(
-    fetch(event.request)
+    fetch(fetchUrl)
       .then((networkResponse) => {
         // Network succeeded — clone the response and save it to cache
         // (A response can only be read once, so we clone before caching)
