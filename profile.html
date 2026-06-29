@@ -26,12 +26,7 @@
   letter-spacing: 0.06em;
   word-break: break-word;
 }
-.profile-ident {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  letter-spacing: 0.08em;
-  margin-top: 0.2rem;
-}
+
 /* Small button reusing the same look as the top-bar theme button */
 .profile-edit-btn {
   background: var(--panel);
@@ -167,9 +162,6 @@ body.theme-bright .edit-modal-overlay { background: rgba(200,196,180,0.96); }
     <div class="s-label">[ EDIT PLAYER ]</div>
     <div class="edit-modal-row">
       <input class="led-input" id="edit-name-input" type="text" placeholder="NAME" autocomplete="off">
-    </div>
-    <div class="edit-modal-row">
-      <input class="led-input" id="edit-ident-input" type="text" placeholder="IDENTIFIER" autocomplete="off">
     </div>
     <div style="display:flex; gap:0.5rem; margin-top:0.4rem">
       <button class="btn-undo" id="edit-cancel-btn" style="flex:1">CANCEL</button>
@@ -337,7 +329,6 @@ function renderProfile(pid) {
       <div class="profile-card-top">
         <div>
           <div class="profile-name">${escapeHtml(player.name)}</div>
-          <div class="profile-ident">${escapeHtml(player.identifier)}</div>
         </div>
         <button class="profile-edit-btn" id="profile-edit-btn">✎ EDIT</button>
       </div>
@@ -381,8 +372,7 @@ let editingPid = null; // which player the open modal is currently editing
 function openEditModal(pid) {
   editingPid = pid;
   const player = getPlayers()[pid];
-  document.getElementById('edit-name-input').value  = player.name;
-  document.getElementById('edit-ident-input').value = player.identifier;
+  document.getElementById('edit-name-input').value = player.name;
   document.getElementById('edit-modal-overlay').classList.add('show');
   document.getElementById('edit-name-input').focus();
 }
@@ -393,18 +383,19 @@ function closeEditModal() {
 }
 
 function saveEdit() {
-  const name  = document.getElementById('edit-name-input').value.trim();
-  const ident = document.getElementById('edit-ident-input').value.trim();
+  const name = document.getElementById('edit-name-input').value.trim();
 
-  // Same validation rules as the "add new player" form in players.js
-  if (!name)  { toast('ENTER A NAME');       return; }
-  if (!ident) { toast('IDENTIFIER REQUIRED'); return; }
+  // Same validation rules as the "add new player" form in players.js.
+  // excludePid is this player's own pid, so saving with their unchanged
+  // name doesn't falsely flag as "taken".
+  if (!name) { toast('ENTER A NAME'); return; }
+  if (isNameTaken(name, editingPid)) { toast('NAME ALREADY TAKEN'); return; }
 
-  updatePlayer(editingPid, { name, identifier: ident });
+  updatePlayer(editingPid, { name });
   toast('PLAYER UPDATED');
   SFX.hit();
   closeEditModal();
-  renderProfilePage(); // refresh the name/identifier now shown on screen
+  renderProfilePage(); // refresh the name now shown on screen
 }
 
 /* ══════════════════════════════════════

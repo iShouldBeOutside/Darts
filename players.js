@@ -94,11 +94,11 @@ function generatePid() {
 
 // ── PLAYER CRUD ───────────────────────────────────────────────────────────────
 
-// createPlayer(name, identifier)
+// createPlayer(name)
 // Creates a new player profile, saves it, and returns the new player object.
-// name       → display name string, e.g. "Jim"
-// identifier → disambiguation string, e.g. "Smith" or "8675309" (mandatory)
-function createPlayer(name, identifier) {
+// name → display name string, e.g. "Jim". Must already be checked for
+//        uniqueness with isNameTaken() before calling this.
+function createPlayer(name) {
   const players = getPlayers();
   const pid     = generatePid();
   const now     = new Date().toISOString();
@@ -106,7 +106,6 @@ function createPlayer(name, identifier) {
   const player = {
     pid,
     name:       name.trim(),
-    identifier: identifier.trim(),
     createdAt:  now,
     lastPlayed: now,
     playCount:  0,
@@ -141,25 +140,27 @@ function touchPlayer(pid) {
 
 // ── DISPLAY NAME HELPERS ──────────────────────────────────────────────────────
 
-// hasDuplicateName(name, players)
-// Returns true if 2 or more players in the registry share this display name.
-// Used to decide whether to show the identifier in the dropdown.
-function hasDuplicateName(name, players) {
-  const lc    = name.toLowerCase();
-  const count = Object.values(players)
-    .filter(p => p.name.toLowerCase() === lc)
-    .length;
-  return count >= 2;
+// isNameTaken(name, excludePid)
+// Returns true if some OTHER player already has this name.
+// Comparison is case-insensitive ("Jim" and "JIM" count as the same name),
+// but the name itself is always stored and shown exactly as typed.
+// excludePid → pid to skip during the check. Pass the player's own pid when
+//              editing, so saving without changing the name doesn't trip
+//              over their own existing record.
+function isNameTaken(name, excludePid = null) {
+  const players = getPlayers();
+  const lc = name.trim().toLowerCase();
+  return Object.values(players).some(
+    p => p.pid !== excludePid && p.name.toLowerCase() === lc
+  );
 }
 
 // displayName(player, players)
 // Returns the string to show in the dropdown for this player.
-// If their name is shared with someone else → "Jim (Smith)"
-// If their name is unique                   → "Jim"
+// Names are now guaranteed unique (enforced at save time), so this is just
+// the player's name — kept as its own function so every call site that
+// already calls displayName(p, players) keeps working unchanged.
 function displayName(player, players) {
-  if (hasDuplicateName(player.name, players)) {
-    return `${player.name} (${player.identifier})`;
-  }
   return player.name;
 }
 
@@ -243,10 +244,6 @@ function buildPlayerSlot(container, slotIndex, allSlotStates, onChange) {
           <input class="led-input ps-new-name" id="ps-new-name-${slotIndex}"
                  type="text" placeholder="NAME" maxlength="20"
                  autocorrect="off" spellcheck="false">
-          <input class="led-input ps-new-ident" id="ps-new-ident-${slotIndex}"
-                 type="text" placeholder="IDENTIFIER (e.g. SMITH)" maxlength="30"
-                 autocorrect="off" spellcheck="false">
-          <div class="ps-new-hint">Identifier helps tell apart players with the same name</div>
           <button class="btn-start ps-new-save" id="ps-new-save-${slotIndex}"
                   style="font-size:0.8rem;padding:0.5rem 1rem;margin-top:0.4rem">
             SAVE &amp; SELECT
@@ -265,7 +262,6 @@ function buildPlayerSlot(container, slotIndex, allSlotStates, onChange) {
   const list     = container.querySelector(`#ps-list-${slotIndex}`);
   const newForm  = container.querySelector(`#ps-new-form-${slotIndex}`);
   const newName  = container.querySelector(`#ps-new-name-${slotIndex}`);
-  const newIdent = container.querySelector(`#ps-new-ident-${slotIndex}`);
   const newSave  = container.querySelector(`#ps-new-save-${slotIndex}`);
   const newCancel= container.querySelector(`#ps-new-cancel-${slotIndex}`);
 
@@ -309,7 +305,7 @@ function buildPlayerSlot(container, slotIndex, allSlotStates, onChange) {
 
     const sorted = sortedPlayers(otherPids);
 
-    // Filter by query — match against display name (includes identifier if duplicate)
+    // Filter by query — match against the player's name
     const filtered = query
       ? sorted.filter(p =>
           displayName(p, players).toLowerCase().includes(query) ||
@@ -352,8 +348,7 @@ function buildPlayerSlot(container, slotIndex, allSlotStates, onChange) {
     addRow.textContent = '+ ADD NEW PLAYER';
     addRow.addEventListener('click', () => {
       newForm.style.display = 'block';
-      newName.value  = '';
-      newIdent.value = '';
+      newName.value = '';
       newName.focus();
     });
     list.appendChild(addRow);
@@ -371,13 +366,12 @@ function buildPlayerSlot(container, slotIndex, allSlotStates, onChange) {
 
   // ── Save new player form ──
   newSave.addEventListener('click', () => {
-    const name  = newName.value.trim();
-    const ident = newIdent.value.trim();
-    if (!name)  { toast('ENTER A NAME');       return; }
-    if (!ident) { toast('IDENTIFIER REQUIRED'); return; }
+    const name = newName.value.trim();
+    if (!name) { toast('ENTER A NAME'); return; }
+    if (isNameTaken(name)) { toast('NAME ALREADY TAKEN'); return; }
 
     // Create the player in localStorage
-    const player = createPlayer(name, ident);
+    const player = createPlayer(name);
     const players = getPlayers();
 
     // Select them immediately in this slot
@@ -433,7 +427,7 @@ function showOwnerSetupIfNeeded(container, onDone) {
   list.sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
     const btn = document.createElement('button');
     btn.className   = 'chip on';
-    btn.textContent = `${p.name} (${p.identifier})`;
+    btn.textContent = p.name;
     btn.style.margin = '0.3rem';
     btn.addEventListener('click', () => {
       setDeviceOwnerPid(p.pid);
