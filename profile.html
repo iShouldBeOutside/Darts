@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PROFILE · Darts</title>
+<link rel="stylesheet" href="common.css">
+<style>
+/* ═══ PROFILE IDENTITY CARD ═══ */
+.profile-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.1rem;
+}
+.profile-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.profile-name {
+  font-size: 1.3rem;
+  color: var(--led-red);
+  text-shadow: 0 0 12px var(--led-red-glow);
+  letter-spacing: 0.06em;
+  word-break: break-word;
+}
+.profile-ident {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  margin-top: 0.2rem;
+}
+/* Small button reusing the same look as the top-bar theme button */
+.profile-edit-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text-dim);
+  font-family: var(--seg);
+  font-size: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  transition: all 0.12s;
+}
+.profile-edit-btn:active { border-color: var(--led-amber); color: var(--led-amber); }
+
+/* Shown instead of the "set as owner" button when this player already IS
+   the device owner — a plain badge, nothing to click. */
+.owner-badge {
+  display: block;
+  text-align: center;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  color: var(--led-amber);
+  text-shadow: 0 0 8px rgba(255,170,0,0.4);
+  border: 1px solid var(--led-amber);
+  background: var(--led-amber-dim);
+  border-radius: 0.4rem;
+  padding: 0.55rem 0.8rem;
+  margin-top: 0.7rem;
+}
+
+/* ═══ GAME HISTORY ROW ═══
+   Same look as the "recent games" rows on the My Stats tab of stats.html,
+   duplicated here on purpose — every page in this app keeps its own CSS
+   rather than sharing extra stylesheets. */
+.hist-row {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.45rem;
+}
+.hist-top { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.hist-result {
+  font-size: 0.66rem; font-weight: bold;
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.hist-result.win  { background: var(--led-green-dim); color: var(--led-green); box-shadow: 0 0 6px var(--led-green-glow); }
+.hist-result.loss { background: var(--led-red-dim);   color: var(--led-red);   box-shadow: 0 0 6px var(--led-red-glow); }
+.hist-type { font-size: 0.66rem; color: var(--text-dim); letter-spacing: 0.08em; flex: 1; }
+.hist-date { font-size: 0.6rem; color: var(--text-dim); }
+.hist-bottom { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.3rem; font-size: 0.7rem; }
+.hist-opp  { color: var(--text-dim); }
+.hist-stat { color: var(--led-amber); }
+
+/* ═══ "PICK A PLAYER" LIST ═══
+   Shown when profile.html is opened with no ?pid= in the URL, or a pid
+   that no longer exists in the registry. */
+.pp-row {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.45rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  transition: all 0.1s;
+}
+.pp-row:active { border-color: var(--led-red); color: var(--led-red); }
+.pp-arrow { color: var(--text-dim); font-size: 1rem; flex-shrink: 0; }
+
+/* ═══ EDIT MODAL ═══
+   Mirrors the .owner-modal-overlay / .owner-modal-panel pattern already
+   defined in common.css for the first-launch device-owner prompt — same
+   full-screen dark scrim + centered panel, just under a different class
+   name since it's specific to this page. */
+.edit-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(5,5,6,0.96);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  padding: 1.4rem;
+  backdrop-filter: blur(8px);
+}
+body.theme-bright .edit-modal-overlay { background: rgba(200,196,180,0.96); }
+.edit-modal-overlay.show { display: flex; }
+.edit-modal-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 1.4rem 1.2rem;
+  max-width: 360px;
+  width: 100%;
+}
+.edit-modal-row { margin-bottom: 0.6rem; }
+</style>
+
+<script src="sfx.js"></script>
+<script src="utils.js"></script>
+<script src="players.js"></script>
+</head>
+<body>
+
+<div class="setup-wrap">
+
+  <!-- ── Top bar: back to hub + page title + theme toggle ── -->
+  <div class="setup-top">
+    <a class="back-btn" href="index.html">◂ HUB</a>
+    <div class="setup-title" style="flex:1" id="profile-title-text">PROFILE</div>
+    <button class="theme-btn" id="theme-btn">☀</button>
+  </div>
+
+  <!-- Everything below is rendered by JS, depending on whether a valid
+       ?pid= was found in the URL (see renderProfilePage() at the bottom). -->
+  <div id="profile-content"></div>
+
+</div>
+
+<!-- ── Edit player modal — hidden until "✎ EDIT" is tapped ── -->
+<div class="edit-modal-overlay" id="edit-modal-overlay">
+  <div class="edit-modal-panel" id="edit-modal-panel">
+    <div class="s-label">[ EDIT PLAYER ]</div>
+    <div class="edit-modal-row">
+      <input class="led-input" id="edit-name-input" type="text" placeholder="NAME" autocomplete="off">
+    </div>
+    <div class="edit-modal-row">
+      <input class="led-input" id="edit-ident-input" type="text" placeholder="IDENTIFIER" autocomplete="off">
+    </div>
+    <div style="display:flex; gap:0.5rem; margin-top:0.4rem">
+      <button class="btn-undo" id="edit-cancel-btn" style="flex:1">CANCEL</button>
+      <button class="btn-resume" id="edit-save-btn" style="flex:1; margin-top:0; border-color:var(--led-amber); color:var(--led-amber)">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ── Theme (same pattern as every other page) ── */
+initTheme();
+
+/* ── Small safety helper: escapes player-typed text before it goes into
+   innerHTML, so a name like "<b>Bob</b>" can't break the page layout.
+   (Duplicated from stats.html on purpose — see note in the CSS above.) ── */
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+/* ══════════════════════════════════════
+   READ ?pid= FROM THE URL
+   Pages link here as profile.html?pid=pid_3 (see stats.html's
+   leaderboard rows). If it's missing or stale, we fall back to the
+   "pick a player" list instead of crashing.
+══════════════════════════════════════ */
+function getPidFromUrl() {
+  return new URLSearchParams(window.location.search).get('pid');
+}
+
+/* ══════════════════════════════════════
+   GAME HISTORY ROW HELPERS
+   (Same logic as the My Stats tab in stats.html, duplicated here.)
+══════════════════════════════════════ */
+function statRowText(game, pid) {
+  const r = game.results[pid];
+  if (!r) return '';
+  if (game.gameType === 'cricket') {
+    return `${r.marks || 0} MARKS / ${r.rounds || 0} RDS · ${r.mpr != null ? r.mpr : 0} MPR`;
+  }
+  // x01 result field names per players.js's logGame() doc comment
+  return `${r.pointsScored || 0} PTS / ${r.dartsThrown || 0} DARTS · ${r.ppd != null ? r.ppd : 0} PPD`;
+}
+
+function variantLabel(game) {
+  const type = game.gameType === 'cricket' ? 'CRICKET' : 'X01';
+  return `${type} · ${String(game.variant).toUpperCase()}`;
+}
+
+function opponentNames(game, viewerPid) {
+  const names = game.players.filter(p => p.pid !== viewerPid).map(p => p.name);
+  return names.length ? names.join(', ') : '—';
+}
+
+function renderHistRow(game, viewerPid) {
+  const won = game.winner === viewerPid;
+  const dateStr = new Date(game.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return `
+    <div class="hist-row">
+      <div class="hist-top">
+        <span class="hist-result ${won ? 'win' : 'loss'}">${won ? 'W' : 'L'}</span>
+        <span class="hist-type">${variantLabel(game)}</span>
+        <span class="hist-date">${dateStr}</span>
+      </div>
+      <div class="hist-bottom">
+        <span class="hist-opp">vs ${escapeHtml(opponentNames(game, viewerPid))}</span>
+        <span class="hist-stat">${statRowText(game, viewerPid)}</span>
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════
+   "PICK A PLAYER" LIST
+   Rendered when there's no valid pid in the URL.
+══════════════════════════════════════ */
+function renderPlayerPicker() {
+  document.getElementById('profile-title-text').textContent = 'SELECT PLAYER';
+
+  const playersObj = getPlayers();
+  const allPlayers = Object.values(playersObj);
+
+  document.getElementById('profile-content').innerHTML = `
+    <div class="s-section">
+      <span class="s-label">[ SELECT A PLAYER TO VIEW ]</span>
+      <input
+        class="led-input"
+        id="pp-search"
+        type="text"
+        placeholder="TYPE TO SEARCH..."
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        style="margin-bottom:0.8rem"
+      >
+      <div id="pp-list"></div>
+    </div>
+  `;
+
+  const listEl = document.getElementById('pp-list');
+
+  // query → lowercase search string, or '' for no filter
+  function renderList(query) {
+    if (allPlayers.length === 0) {
+      listEl.innerHTML = '<div class="row2-hint">NO PLAYERS YET — ADD ONE FROM ANY GAME SCREEN.</div>';
+      return;
+    }
+
+    const q = query.trim().toLowerCase();
+    const filtered = allPlayers
+      .filter(p => !q || displayName(p, playersObj).toLowerCase().includes(q) || p.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = '<div class="row2-hint">NO PLAYERS MATCH THAT SEARCH.</div>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    filtered.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'pp-row';
+      row.innerHTML = `<span>${escapeHtml(displayName(p, playersObj))}</span><span class="pp-arrow">›</span>`;
+      // Clicking a row just reloads this same page with that player's pid —
+      // keeps the "pid lives in the URL" pattern consistent everywhere.
+      row.addEventListener('click', () => {
+        window.location.href = `profile.html?pid=${encodeURIComponent(p.pid)}`;
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  renderList('');
+  document.getElementById('pp-search').addEventListener('input', e => renderList(e.target.value));
+}
+
+/* ══════════════════════════════════════
+   MAIN PROFILE VIEW
+   Rendered when the URL's pid matches a real player.
+══════════════════════════════════════ */
+function renderProfile(pid) {
+  document.getElementById('profile-title-text').textContent = 'PROFILE';
+
+  const playersObj = getPlayers();
+  const player = playersObj[pid];
+
+  // All games this player took part in, newest first.
+  const games = getGames()
+    .filter(g => g.players.some(p => p.pid === pid))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const winCount  = games.filter(g => g.winner === pid).length;
+  const lossCount = games.length - winCount;
+  const winPct    = games.length > 0 ? Math.round((winCount / games.length) * 100) + '%' : '—';
+
+  const isOwner = pid === getDeviceOwnerPid();
+
+  document.getElementById('profile-content').innerHTML = `
+    <div class="profile-card">
+      <div class="profile-card-top">
+        <div>
+          <div class="profile-name">${escapeHtml(player.name)}</div>
+          <div class="profile-ident">${escapeHtml(player.identifier)}</div>
+        </div>
+        <button class="profile-edit-btn" id="profile-edit-btn">✎ EDIT</button>
+      </div>
+
+      <div class="row2-hint" style="margin:0.5rem 0 0">${games.length} GAMES · ${winCount}W-${lossCount}L (${winPct})</div>
+
+      ${isOwner
+        ? `<div class="owner-badge">★ DEVICE OWNER</div>`
+        : `<button class="btn-resume" id="profile-set-owner-btn">SET AS DEVICE OWNER</button>`}
+    </div>
+
+    <div class="s-section" style="margin-top:1.4rem">
+      <span class="s-label">[ GAME HISTORY ]</span>
+      <div id="profile-history">
+        ${games.length === 0
+          ? '<div class="row2-hint">NO GAMES LOGGED YET.</div>'
+          : games.map(g => renderHistRow(g, pid)).join('')}
+      </div>
+    </div>
+  `;
+
+  // ── Wire up the buttons we just rendered ──
+  document.getElementById('profile-edit-btn').addEventListener('click', () => openEditModal(pid));
+
+  const setOwnerBtn = document.getElementById('profile-set-owner-btn');
+  if (setOwnerBtn) {
+    setOwnerBtn.addEventListener('click', () => {
+      setDeviceOwnerPid(pid);
+      toast('DEVICE OWNER SET');
+      SFX.hit();
+      renderProfilePage(); // re-render so the button flips into the badge
+    });
+  }
+}
+
+/* ══════════════════════════════════════
+   EDIT MODAL
+══════════════════════════════════════ */
+let editingPid = null; // which player the open modal is currently editing
+
+function openEditModal(pid) {
+  editingPid = pid;
+  const player = getPlayers()[pid];
+  document.getElementById('edit-name-input').value  = player.name;
+  document.getElementById('edit-ident-input').value = player.identifier;
+  document.getElementById('edit-modal-overlay').classList.add('show');
+  document.getElementById('edit-name-input').focus();
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal-overlay').classList.remove('show');
+  editingPid = null;
+}
+
+function saveEdit() {
+  const name  = document.getElementById('edit-name-input').value.trim();
+  const ident = document.getElementById('edit-ident-input').value.trim();
+
+  // Same validation rules as the "add new player" form in players.js
+  if (!name)  { toast('ENTER A NAME');       return; }
+  if (!ident) { toast('IDENTIFIER REQUIRED'); return; }
+
+  updatePlayer(editingPid, { name, identifier: ident });
+  toast('PLAYER UPDATED');
+  SFX.hit();
+  closeEditModal();
+  renderProfilePage(); // refresh the name/identifier now shown on screen
+}
+
+/* ══════════════════════════════════════
+   TOP-LEVEL: decide picker vs profile view
+══════════════════════════════════════ */
+function renderProfilePage() {
+  const pid = getPidFromUrl();
+  const playersObj = getPlayers();
+
+  if (pid && playersObj[pid]) {
+    renderProfile(pid);
+  } else {
+    renderPlayerPicker();
+  }
+}
+
+/* ══════════════════════════════════════
+   BOOT
+══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('theme-btn').addEventListener('click', () => {
+    toggleTheme();
+    SFX.hit();
+  });
+
+  document.getElementById('edit-cancel-btn').addEventListener('click', closeEditModal);
+  document.getElementById('edit-save-btn').addEventListener('click', saveEdit);
+
+  // Tapping the dark scrim outside the panel also closes the modal —
+  // tapping the panel itself does not (e.target check below).
+  document.getElementById('edit-modal-overlay').addEventListener('click', e => {
+    if (e.target.id === 'edit-modal-overlay') closeEditModal();
+  });
+
+  renderProfilePage();
+});
+</script>
+
+</body>
+</html>
