@@ -5,9 +5,128 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>X01 · Darts</title>
 <link rel="stylesheet" href="../common.css">
+<style>
+  /* ── Player selection slots (same component cricket.html uses — there's
+     no shared place for this yet, so each page that needs buildPlayerSlot()
+     keeps its own copy, same as profile.html/stats.html do for escapeHtml()
+     below) ── */
+  .ps-slot {
+    position: relative;
+    margin-bottom: 0.6rem;
+  }
+  .ps-selected {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 0.55rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .ps-selected:active { opacity: 0.7; }
+  /* Amber instead of cricket's red, to match this page's accent color */
+  .ps-chosen-filled { color: var(--led-amber); }
+  .ps-caret { font-size: 0.7rem; color: var(--text-dim); }
+  .ps-dropdown {
+    position: absolute;
+    left: 0; right: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 0.35rem 0.35rem;
+    z-index: 100;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .ps-search {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-bright);
+    font-family: var(--seg);
+    font-size: 0.8rem;
+    padding: 0.5rem 0.8rem;
+    outline: none;
+    letter-spacing: 0.06em;
+  }
+  .ps-row {
+    padding: 0.55rem 0.8rem;
+    font-size: 0.82rem;
+    letter-spacing: 0.05em;
+    color: var(--text-bright);
+    cursor: pointer;
+  }
+  .ps-row:active, .ps-row:hover { background: var(--border); }
+  .ps-guest   { color: var(--text-dim); font-style: italic; }
+  .ps-add-new { color: var(--led-amber); border-top: 1px solid var(--border); }
+  .ps-new-form {
+    padding: 0.6rem 0.8rem 0.8rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .ps-new-hint {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin: 0.3rem 0 0.2rem;
+  }
+  .ps-new-cancel {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--seg);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    padding: 0.3rem 0;
+    cursor: pointer;
+    display: block;
+    margin-top: 0.2rem;
+  }
+
+  /* ── Win overlay stats table (same as cricket.html) ── */
+  .win-stats {
+    margin-top: 0.8rem;
+    width: 100%;
+    font-size: 0.78rem;
+    border-collapse: collapse;
+  }
+  .win-stats td {
+    padding: 0.2rem 0.5rem;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .win-stats .ws-name { font-size: 0.7rem; letter-spacing: 0.06em; }
+  .win-stats .ws-val  { color: var(--text-bright); font-size: 0.88rem; }
+  .win-stats .ws-avg  { color: var(--text-dim); font-size: 0.68rem; }
+
+  /* ── x01-specific additions (new) ── */
+  /* Darts-thrown + running-PPD readout in the scoreboard's right column */
+  .x01-ppd-lbl {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    margin-bottom: 0.3rem;
+  }
+  /* Shown under a player's score while they still need to satisfy
+     double-in / master-in before their darts start counting */
+  .x01-need-in {
+    font-size: 0.6rem;
+    color: var(--led-amber);
+    letter-spacing: 0.05em;
+    margin-top: 0.15rem;
+  }
+</style>
 
 <script src="../sfx.js"></script>
 <script src="../utils.js"></script>
+<script src="../players.js"></script>
 </head>
 <body>
 
@@ -21,6 +140,7 @@
     <div class="setup-title amber" id="setup-title">501</div>
   </div>
 
+  <!-- ── Player count: 1–4 ── -->
   <div class="s-section">
     <span class="s-label">[ PLAYERS ]</span>
     <div class="chip-row" id="player-chips">
@@ -28,34 +148,46 @@
       <div class="chip on amber" data-n="2">2</div>
       <div class="chip" data-n="3">3</div>
       <div class="chip" data-n="4">4</div>
-      <div class="chip" data-n="5">5</div>
-      <div class="chip" data-n="6">6</div>
-      <div class="chip" data-n="7">7</div>
-      <div class="chip" data-n="8">8</div>
     </div>
   </div>
 
+  <!-- ── Player selection slots (dropdowns, built by players.js) ── -->
   <div class="s-section">
-    <span class="s-label">[ NAMES ]</span>
-    <div id="player-names"></div>
+    <span class="s-label">[ SELECT PLAYERS ]</span>
+    <div id="player-slots"></div>
   </div>
 
+  <!-- ── Variant: 301 / 501 / 701 ── -->
   <div class="s-section">
-    <span class="s-label">[ STARTING SCORE ]</span>
-    <div class="chip-row" id="score-chips">
-      <div class="chip" data-s="101">101</div>
-      <div class="chip" data-s="201">201</div>
+    <span class="s-label">[ VARIANT ]</span>
+    <div class="chip-row" id="variant-chips">
       <div class="chip" data-s="301">301</div>
-      <div class="chip" data-s="401">401</div>
-      <div class="chip" data-s="501">501</div>
-      <div class="chip" data-s="601">601</div>
+      <div class="chip on amber" data-s="501">501</div>
       <div class="chip" data-s="701">701</div>
-      <div class="chip" data-s="801">801</div>
-      <div class="chip" data-s="901">901</div>
-      <div class="chip" data-s="1001">1001</div>
     </div>
   </div>
 
+  <!-- ── In mode ── -->
+  <div class="s-section">
+    <span class="s-label">[ IN ]</span>
+    <div class="chip-row" id="in-chips">
+      <div class="chip on amber" data-mode="single">SINGLE</div>
+      <div class="chip" data-mode="double">DOUBLE</div>
+      <div class="chip" data-mode="master">MASTER</div>
+    </div>
+  </div>
+
+  <!-- ── Out mode ── -->
+  <div class="s-section">
+    <span class="s-label">[ OUT ]</span>
+    <div class="chip-row" id="out-chips">
+      <div class="chip" data-mode="single">SINGLE</div>
+      <div class="chip on amber" data-mode="double">DOUBLE</div>
+      <div class="chip" data-mode="master">MASTER</div>
+    </div>
+  </div>
+
+  <!-- ── Round limit ── -->
   <div class="s-section">
     <span class="s-label">[ ROUND LIMIT ]</span>
     <div class="row2">
@@ -140,22 +272,78 @@
 <script>
 'use strict';
 
-/* ── Init ── */
+/* ══════════════════════════════════════
+   INIT — theme
+══════════════════════════════════════ */
 initTheme();
 document.addEventListener('DOMContentLoaded', () => {
   const tb = document.getElementById('theme-btn');
   if (tb) tb.addEventListener('click', () => { toggleTheme(); SFX.hit(); });
 });
 
-const SAVE_KEY = 'x01save';
-let G = {};
+/* ── Small safety helper: escapes player-typed text before it goes into
+   innerHTML, so a name like "<b>Bob</b>" can't break the page layout.
+   (Duplicated locally on purpose, same as profile.html/stats.html do —
+   there's no shared utils home for it yet.) ── */
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+/* ══════════════════════════════════════
+   STATE
+══════════════════════════════════════ */
+let G    = {};
 let mult = 1;
 
-/* ── Read ?start= param from hub link ── */
-const urlStart = parseInt(new URLSearchParams(location.search).get('start')) || 501;
+let selN     = 2;
+let selScore = 501;
+let selIn    = 'single';
+let selOut   = 'double';
 
-/* ── Setup: player count ── */
-let selN = 2;
+/* ── Player slot state (identical pattern to cricket.html) ──────────────────
+   slots[] holds the return value of buildPlayerSlot() for each player
+   position. Each slot has .getPid() and .getName(). */
+let slots = [];
+
+function allSlotStates() {
+  return slots.map(s => ({
+    pid:  s ? s.getPid()  : null,
+    name: s ? s.getName() : '',
+  }));
+}
+
+// rebuildSlotsPreservingSelections()
+// Renders selN player-selection dropdowns into #player-slots. Called on
+// page load and whenever the player-count chip changes. The 4th argument
+// to buildPlayerSlot is an onChange callback fired whenever a slot's pick
+// changes — we pass a no-op (see onSlotChange below for why).
+function rebuildSlotsPreservingSelections() {
+  const n = selN;
+  slots = [];
+  const container = document.getElementById('player-slots');
+  container.innerHTML = '';
+
+  for (let i = 0; i < n; i++) {
+    const wrapper = document.createElement('div');
+    wrapper.style.marginBottom = '0.4rem';
+    container.appendChild(wrapper);
+
+    const slot = buildPlayerSlot(wrapper, i, allSlotStates, onSlotChange);
+    slots.push(slot);
+  }
+}
+
+// onSlotChange() — intentionally empty. Each slot keeps its own selection
+// in a local variable inside buildPlayerSlot(); rebuilding here would wipe
+// that the instant a player picked someone. Sibling exclusion still works
+// because every slot calls allSlotStates() fresh each time IT opens.
+function onSlotChange() {}
+
+/* ══════════════════════════════════════
+   SETUP — player count chips
+══════════════════════════════════════ */
 document.getElementById('player-chips').addEventListener('click', e => {
   const c = e.target.closest('.chip'); if (!c) return;
   selN = +c.dataset.n;
@@ -163,67 +351,151 @@ document.getElementById('player-chips').addEventListener('click', e => {
     x.classList.toggle('on', x === c);
     x.classList.toggle('amber', x === c);
   });
-  buildNameInputs('player-names', selN, 'PLAYER');
+  rebuildSlotsPreservingSelections();
 });
 
-/* ── Setup: starting score ── */
-let selScore = urlStart;
-
+/* ══════════════════════════════════════
+   SETUP — variant chips (301 / 501 / 701)
+   Each variant gets its OWN save slot (see saveKeyFor below), so picking
+   a different variant here also means re-checking whether THAT variant
+   has a paused game to resume.
+══════════════════════════════════════ */
 function applyScoreChip(score) {
   selScore = score;
   document.getElementById('setup-title').textContent = score;
-  document.querySelectorAll('#score-chips .chip').forEach(c => {
+  document.querySelectorAll('#variant-chips .chip').forEach(c => {
     const match = +c.dataset.s === score;
     c.classList.toggle('on', match);
     c.classList.toggle('amber', match);
   });
+  refreshResumeVisibility();
 }
 
-document.getElementById('score-chips').addEventListener('click', e => {
+document.getElementById('variant-chips').addEventListener('click', e => {
   const c = e.target.closest('.chip'); if (!c) return;
   applyScoreChip(+c.dataset.s);
 });
 
-/* ── Boot setup ── */
-applyScoreChip(urlStart);
-buildNameInputs('player-names', selN, 'PLAYER');
-try {
-  if (localStorage.getItem(SAVE_KEY)) document.getElementById('resume-btn').style.display = '';
-} catch(e) {}
-
-/* ── Start / Resume ── */
-document.getElementById('start-btn').addEventListener('click', () => {
-  G = freshState();
-  G.players    = getNames('player-names', 'P');
-  G.startScore  = selScore;
-  G.maxRounds   = +document.getElementById('max-rounds').value;
-  G.players.forEach(p => { G.scores[p] = selScore; G.history[p] = []; });
-  launch();
+/* ══════════════════════════════════════
+   SETUP — in / out mode chips
+══════════════════════════════════════ */
+function applyInChip(mode) {
+  selIn = mode;
+  document.querySelectorAll('#in-chips .chip').forEach(c => {
+    const match = c.dataset.mode === mode;
+    c.classList.toggle('on', match);
+    c.classList.toggle('amber', match);
+  });
+}
+function applyOutChip(mode) {
+  selOut = mode;
+  document.querySelectorAll('#out-chips .chip').forEach(c => {
+    const match = c.dataset.mode === mode;
+    c.classList.toggle('on', match);
+    c.classList.toggle('amber', match);
+  });
+}
+document.getElementById('in-chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  applyInChip(c.dataset.mode);
 });
-  if (window.goatcounter) {
-    window.goatcounter.count({
-      path:  'game-started-x01-' + selScore,
-      title: 'X01 game started',
-      event: true,
-    });
+document.getElementById('out-chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  applyOutChip(c.dataset.mode);
+});
+
+/* ══════════════════════════════════════
+   SAVE KEY — one per variant
+   x01_301 / x01_501 / x01_701, so a paused 501 game and a paused 301
+   game can both sit untouched at the same time.
+══════════════════════════════════════ */
+function saveKeyFor(score) {
+  return `x01_${score}`;
+}
+
+function refreshResumeVisibility() {
+  try {
+    document.getElementById('resume-btn').style.display =
+      localStorage.getItem(saveKeyFor(selScore)) ? '' : 'none';
+  } catch (e) {
+    document.getElementById('resume-btn').style.display = 'none';
+  }
+}
+
+/* ══════════════════════════════════════
+   BOOT
+══════════════════════════════════════ */
+// Read ?start= from the hub link (e.g. games/x01.html?start=501).
+// Falls back to 501 if missing or not one of the 3 supported variants.
+const VALID_VARIANTS = [301, 501, 701];
+let urlStart = parseInt(new URLSearchParams(location.search).get('start')) || 501;
+if (!VALID_VARIANTS.includes(urlStart)) urlStart = 501;
+applyScoreChip(urlStart);
+
+document.addEventListener('DOMContentLoaded', () => {
+  rebuildSlotsPreservingSelections();
+  refreshResumeVisibility();
+});
+
+/* ══════════════════════════════════════
+   START / RESUME
+══════════════════════════════════════ */
+document.getElementById('start-btn').addEventListener('click', () => {
+  // Validate every player slot has a selection (same as cricket.html)
+  const selections = allSlotStates();
+  for (let i = 0; i < selN; i++) {
+    if (!selections[i] || !selections[i].pid) {
+      toast(`SELECT PLAYER ${i + 1}`); return;
+    }
   }
 
+  G = freshState();
+  G.players    = selections.slice(0, selN).map(s => s.name);
+  G.playerPids = selections.slice(0, selN).map(s => s.pid);
+  G.startScore = selScore;
+  G.inMode     = selIn;
+  G.outMode    = selOut;
+  G.variant    = `${selScore}-${selIn}-in-${selOut}-out`;
+  G.maxRounds  = +document.getElementById('max-rounds').value;
+
+  G.players.forEach(p => {
+    G.scores[p]      = selScore;
+    G.dartsThrown[p] = 0;
+    // Single-in players are "open" from the first dart — only double-in
+    // and master-in players have to earn it.
+    G.hasOpened[p]   = selIn === 'single';
+    G.history[p]     = [];
+  });
+
+  G.turnStartScore = G.scores[G.players[0]];
+  G.openedThisTurn = false;
+
+  launch();
+});
 
 document.getElementById('resume-btn').addEventListener('click', () => {
-  try { G = JSON.parse(localStorage.getItem(SAVE_KEY)); launch(); }
-  catch(e) { toast('LOAD ERROR'); }
+  try {
+    G = JSON.parse(localStorage.getItem(saveKeyFor(selScore)));
+    launch();
+  } catch (e) { toast('LOAD ERROR'); }
 });
 
 function freshState() {
   return {
-    players: [], startScore: 501, maxRounds: 0,
-    scores: {}, history: {},
+    players: [], playerPids: [],
+    startScore: 501, inMode: 'single', outMode: 'double', variant: '',
+    maxRounds: 0,
+    scores: {}, dartsThrown: {}, hasOpened: {}, history: {},
     currentPlayer: 0, currentThrows: [],
+    turnStartScore: 0,
+    openedThisTurn: false,
     round: 1, undoStack: []
   };
 }
 
-/* ── Launch game ── */
+/* ══════════════════════════════════════
+   LAUNCH
+══════════════════════════════════════ */
 function launch() {
   mult = 1;
   document.getElementById('game-logo').textContent = G.startScore;
@@ -233,7 +505,7 @@ function launch() {
   renderAll();
 }
 
-/* ── Target grid (built once, stays static) ── */
+/* ── Target grid: numbers 1–20, BULL, MISS. Built once per launch. ── */
 function buildTargetGrid() {
   const g = document.getElementById('tgt-grid');
   g.innerHTML = '';
@@ -241,36 +513,30 @@ function buildTargetGrid() {
     const b = document.createElement('button');
     b.className   = 'tbtn x01';
     b.textContent = n;
-    b.dataset.val = n;
     b.addEventListener('click', () => doThrow(n, mult));
     g.appendChild(b);
   }
-  // Bull
   const bull = document.createElement('button');
   bull.className   = 'tbtn x01 bull';
   bull.textContent = 'BULL';
   bull.addEventListener('click', () => doThrow(25, mult));
   g.appendChild(bull);
-  // Miss
+
   const miss = document.createElement('button');
   miss.className   = 'tbtn miss-btn';
   miss.textContent = 'MISS';
-  miss.addEventListener('click', () => doThrow(0, 0));
+  miss.addEventListener('click', () => doThrow(null, 0));
   g.appendChild(miss);
 }
 
-/* ── Render ── */
+/* ══════════════════════════════════════
+   RENDER
+══════════════════════════════════════ */
 function renderAll() {
   renderBoard();
   renderSlots();
-  document.getElementById('turn-name').textContent = G.players[G.currentPlayer];
-  const mx = G.maxRounds;
-  document.getElementById('r-badge').textContent = mx > 0 ? `R${G.round}/${mx}` : `R${G.round}`;
-  const lb = document.getElementById('last-bar');
-  if (lb) lb.classList.toggle('show', mx > 0 && G.round === mx);
-  document.querySelectorAll('#mult-row .mbtn').forEach(b =>
-    b.classList.toggle('active', +b.dataset.m === mult)
-  );
+  renderTurnName();
+  renderBadge();
 }
 
 function renderBoard() {
@@ -279,24 +545,36 @@ function renderBoard() {
   board.innerHTML = '';
 
   G.players.forEach(p => {
-    const rem      = G.scores[p];
-    const isActive = p === cp;
-    const hist     = (G.history[p] || []).slice(-3);
+    const rem         = G.scores[p];
+    const isActive    = p === cp;
+    const dartsThrown = G.dartsThrown[p] || 0;
+    // pointsScored is DERIVED (startScore minus what's left), not tracked
+    // separately — see the big comment above doThrow() for why that's safe.
+    const pointsScored = G.startScore - rem;
+    const ppd           = dartsThrown > 0 ? (pointsScored / dartsThrown).toFixed(2) : '0.00';
+    const hist           = (G.history[p] || []).slice(-3);
 
-    const histHtml = hist.map(r =>
-      r.bust
+    const histHtml = hist.map(h =>
+      h.bust
         ? `<span class="bust-hist">BUST</span>`
-        : `<span>${r.total > 0 ? '-' + r.total : '—'}</span>`
+        : `<span>${h.total > 0 ? '-' + h.total : '—'}</span>`
     ).join('<br>');
+
+    const needsIn   = G.inMode !== 'single' && !G.hasOpened[p];
+    const needBadge = needsIn
+      ? `<div class="x01-need-in">NEED ${G.inMode.toUpperCase()} IN</div>`
+      : '';
 
     const row = document.createElement('div');
     row.className = `x01-player-row${isActive ? ' active-row' : ''}`;
     row.innerHTML = `
       <div class="x01-left">
-        <div class="x01-pname">${p}</div>
+        <div class="x01-pname">${escapeHtml(p)}</div>
         <div class="x01-remaining${rem <= 50 ? ' danger' : ''}">${rem}</div>
+        ${needBadge}
       </div>
       <div class="x01-right">
+        <div class="x01-ppd-lbl">${dartsThrown}D · ${ppd}PPD</div>
         <div class="x01-round-hist">${histHtml}</div>
       </div>`;
     board.appendChild(row);
@@ -318,28 +596,95 @@ function renderSlots() {
         ? `${th.mult}×${th.val === 25 ? 'B' : th.val}`
         : (th.val === 25 ? 'BULL' : String(th.val));
       sl.textContent = lbl;
-      sl.className   = 'tslot hit';
+      // noScore = hit something before opening the innings (double/master-in
+      // not yet satisfied) — styled like a miss since it didn't count.
+      sl.className = th.noScore ? 'tslot miss' : 'tslot hit';
     }
   }
 }
 
-/* ── Throw ── */
+function renderTurnName() {
+  document.getElementById('turn-name').textContent = G.players[G.currentPlayer];
+}
+
+function renderBadge() {
+  const mx = G.maxRounds, r = G.round;
+  document.getElementById('r-badge').textContent = mx > 0 ? `R${r}/${mx}` : `R${r}`;
+  document.getElementById('last-bar').classList.toggle('show', mx > 0 && r === mx);
+}
+
+/* ══════════════════════════════════════
+   UNDO — pushHistory() snapshots full state before every dart, MISS, or
+   manual NEXT. (x01 doesn't need cricket's tapPending/tapCount — every
+   dart here is already unambiguous the moment SINGLE/DOUBLE/TRIPLE is
+   picked, so there's no "pending tap" state to capture.)
+══════════════════════════════════════ */
+function pushHistory() {
+  G.undoStack.push({
+    scores:         JSON.parse(JSON.stringify(G.scores)),
+    dartsThrown:    JSON.parse(JSON.stringify(G.dartsThrown)),
+    hasOpened:      JSON.parse(JSON.stringify(G.hasOpened)),
+    history:        JSON.parse(JSON.stringify(G.history)),
+    currentThrows:  JSON.parse(JSON.stringify(G.currentThrows)),
+    currentPlayer:  G.currentPlayer,
+    round:          G.round,
+    turnStartScore: G.turnStartScore,
+    openedThisTurn: G.openedThisTurn,
+  });
+}
+
+/* ══════════════════════════════════════
+   THROW LOGIC
+   ────────────────────────────────────────────────────────────────────────
+   val → number hit (1-20, or 25 for bull). null = MISS.
+   m   → multiplier: 1 single / 2 double / 3 triple. 0 = MISS.
+
+   Three rules interact here, so here's the order this function checks
+   them in:
+
+   1. IN-MODE — if the player hasn't opened their innings yet (only
+      possible under double-in or master-in; single-in players start
+      "open"), this dart only opens them if it qualifies (a double for
+      double-in; a double OR triple for master-in). A hit that doesn't
+      qualify still uses up a dart but changes nothing else.
+
+   2. BUST — going below 0, landing on exactly 1 under double/master-out
+      (no dart can ever turn 1 into 0 while satisfying either of those),
+      or landing on exactly 0 without the right multiplier for the
+      out-mode, all bust the turn.
+
+      Per your call on the standard rule: a bust voids the WHOLE turn,
+      not just the one dart that caused it. So we revert the score all
+      the way back to turnStartScore (what it was when this player's
+      turn began) — wiping out any earlier darts this turn too. If the
+      very dart that opened this player's innings happened earlier in
+      THIS SAME turn, that gets undone as well (tracked via
+      G.openedThisTurn, since by the time a bust happens we're often a
+      dart or two past the one that actually opened them).
+
+   3. CHECKOUT — landing on exactly 0 WITH the right multiplier for the
+      out-mode wins the leg immediately.
+
+   pointsScored is never tracked as its own running total — seeing
+   exactly why is the key to understanding this whole function: because
+   a bust always reverts G.scores[player] back to turnStartScore, the
+   value "startScore minus whatever's currently left" is ALWAYS exactly
+   equal to the points that have validly stuck so far. There's nothing
+   to keep in sync and nothing to roll back separately — reverting the
+   score on a bust handles it automatically.
+══════════════════════════════════════ */
 function doThrow(val, m) {
   if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
 
-  // Snapshot for undo
-  G.undoStack.push({
-    scores:        JSON.parse(JSON.stringify(G.scores)),
-    history:       JSON.parse(JSON.stringify(G.history)),
-    currentThrows: JSON.parse(JSON.stringify(G.currentThrows)),
-    currentPlayer: G.currentPlayer,
-    round:         G.round,
-  });
+  pushHistory(); // snapshot BEFORE this dart changes anything
 
   const cp = G.players[G.currentPlayer];
+  // Every dart counts toward darts-thrown for PPD — miss, bust, and
+  // not-yet-open darts included, exactly like a real 3-dart average.
+  G.dartsThrown[cp] = (G.dartsThrown[cp] || 0) + 1;
 
-  // Miss
-  if (val === 0 || m === 0) {
+  /* ── MISS ── */
+  if (val === null || m === 0) {
     SFX.miss();
     G.currentThrows.push(null);
     mult = 1;
@@ -347,41 +692,71 @@ function doThrow(val, m) {
     return;
   }
 
-  const score    = val * m;
-  const cur      = G.scores[cp];
-  const newScore = cur - score;
+  const rawPoints   = val * m;
+  const isDoubleHit = m === 2; // also covers "double bull": val=25, m=2 → 50
+  const isTripleHit = m === 3;
 
-  if (newScore < 0) {
-    // Bust — score stays, turn ends automatically
+  /* ── 1. IN-MODE CHECK ── */
+  if (!G.hasOpened[cp]) {
+    const qualifiesToOpen =
+      (G.inMode === 'double' && isDoubleHit) ||
+      (G.inMode === 'master' && (isDoubleHit || isTripleHit));
+
+    if (!qualifiesToOpen) {
+      // Hit something, but it didn't open the innings — no score change,
+      // dart's still used up.
+      SFX.hit();
+      G.currentThrows.push({ val, mult: m, bust: false, noScore: true });
+      mult = 1;
+      renderAll();
+      return;
+    }
+
+    G.hasOpened[cp]  = true;
+    G.openedThisTurn = true; // remember in case a LATER dart this turn busts
+  }
+
+  const cur      = G.scores[cp];
+  const newScore = cur - rawPoints;
+
+  /* ── 2. BUST (shared cleanup for every way a turn can go bust) ── */
+  function handleBust() {
     SFX.bust();
     bustFlash();
     G.currentThrows.push({ val, mult: m, bust: true });
+    G.scores[cp] = G.turnStartScore;            // void the WHOLE turn
+    if (G.openedThisTurn) G.hasOpened[cp] = false; // undo the open too, if it happened this turn
     mult = 1;
     renderAll();
     setTimeout(() => nextPlayer(true), 900);
-    return;
   }
 
+  if (newScore < 0) { handleBust(); return; }                             // overshot
+  if (newScore === 1 && G.outMode !== 'single') { handleBust(); return; } // can never finish from 1 on double/master-out
+
   if (newScore === 0) {
-    // Checkout!
+    const validFinish =
+      G.outMode === 'single' ||
+      (G.outMode === 'double' && isDoubleHit) ||
+      (G.outMode === 'master' && (isDoubleHit || isTripleHit));
+
+    if (!validFinish) { handleBust(); return; } // hit zero, but not with a qualifying dart
+
+    /* ── 3. CHECKOUT ── */
     SFX.checkout();
     G.scores[cp] = 0;
     G.currentThrows.push({ val, mult: m, bust: false });
+    if (!G.history[cp]) G.history[cp] = [];
+    G.history[cp].push({ total: rawPoints, bust: false });
     mult = 1;
     renderAll();
-    if (!G.history[cp]) G.history[cp] = [];
-    G.history[cp].push({ total: score, bust: false });
-    try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
-    setTimeout(() =>
-      showWin(cp, `CHECKOUT  ${cur} → 0`, () => {
-        document.getElementById('win-overlay').classList.remove('show');
-        location.href = `../games/x01.html?start=${G.startScore}`;
-      })
-    , 300);
+    setTimeout(() => {
+      finishGame(cp, G.currentPlayer, `CHECKOUT  ${cur} → 0`, true);
+    }, 300);
     return;
   }
 
-  // Normal hit
+  // ── Normal scoring dart ──
   if      (m === 3) SFX.triple();
   else if (m === 2) SFX.double();
   else              SFX.hit();
@@ -392,8 +767,17 @@ function doThrow(val, m) {
   renderAll();
 }
 
-/* ── Next player ── */
+/* ══════════════════════════════════════
+   NEXT PLAYER
+   fromBust=true is the auto-advance 900ms after a bust — doThrow() already
+   took an undo snapshot right before the busting dart, so we deliberately
+   DON'T push another one here. That way a single UNDO after a bust takes
+   you straight back to "about to throw that dart again", instead of
+   needing two presses to undo the bust-then-rotate as separate steps.
+══════════════════════════════════════ */
 function nextPlayer(fromBust) {
+  if (!fromBust) pushHistory();
+
   const cp = G.players[G.currentPlayer];
   if (!G.history[cp]) G.history[cp] = [];
 
@@ -401,15 +785,21 @@ function nextPlayer(fromBust) {
     G.history[cp].push({ total: 0, bust: true });
   } else {
     const total = G.currentThrows.reduce((s, th) => {
-      if (!th || th.bust) return s;
+      if (!th || th.bust || th.noScore) return s;
       return s + th.val * th.mult;
     }, 0);
     G.history[cp].push({ total, bust: false });
   }
 
   SFX.next();
-  G.currentThrows  = [];
-  G.currentPlayer  = (G.currentPlayer + 1) % G.players.length;
+  G.currentThrows = [];
+  G.currentPlayer = (G.currentPlayer + 1) % G.players.length;
+
+  // New current player's turn starts now — remember their score so a
+  // later bust THIS turn knows what to revert back to.
+  G.turnStartScore = G.scores[G.players[G.currentPlayer]];
+  G.openedThisTurn = false;
+
   if (G.currentPlayer === 0) {
     G.round++;
     if (G.maxRounds > 0 && G.round > G.maxRounds) { endByLimit(); return; }
@@ -420,35 +810,129 @@ function nextPlayer(fromBust) {
 }
 
 function endByLimit() {
-  // Find leader: most score thrown (startScore - remaining), ties go to lower remaining
+  // Leader = whoever has scored the most so far (startScore - remaining).
+  // Ties go to whoever has the lower remaining score.
   let winner = G.players[0];
-  let best = -Infinity;
+  let bestScored = -Infinity;
   G.players.forEach(p => {
     const scored = G.startScore - G.scores[p];
-    if (scored > best) { best = scored; winner = p; }
+    if (scored > bestScored) { bestScored = scored; winner = p; }
   });
+  const winnerIdx = G.players.indexOf(winner);
+  finishGame(winner, winnerIdx, `ROUND LIMIT  ${G.scores[winner]} LEFT`, false);
+}
+
+/* ══════════════════════════════════════
+   WIN / GAME-END — logs the game and shows the stats overlay.
+   Used for both a real checkout AND a round-limit ending, so every
+   completed x01 game ends up in darts_games either way.
+══════════════════════════════════════ */
+function finishGame(winnerName, winnerIdx, subText, isCheckout) {
+  // ── 1. Build results for logGame() ──
+  const results = {};
+  G.players.forEach((p, i) => {
+    const pid          = G.playerPids[i];
+    const dartsThrown  = G.dartsThrown[p] || 0;
+    const pointsScored = G.startScore - G.scores[p];
+    const ppd          = dartsThrown > 0 ? +(pointsScored / dartsThrown).toFixed(2) : 0;
+    results[pid] = {
+      pointsScored,
+      dartsThrown,
+      ppd,
+      checkout: !!(isCheckout && p === winnerName),
+    };
+  });
+
+  const record = {
+    gameType: 'x01',
+    variant:  G.variant,
+    players:  G.players.map((name, i) => ({ pid: G.playerPids[i], name })),
+    winner:   G.playerPids[winnerIdx],
+    results,
+  };
+
+  // logGame is defined in players.js — saves to darts_games and updates
+  // each non-guest player's lastPlayed/playCount.
+  logGame(record);
+
+  // ── 2. Stats table for the win overlay: this game's PPD + career PPD
+  // and win/loss record for THIS exact variant ──
+  let statsHtml = '<table class="win-stats"><tr>';
+  G.players.forEach(p => { statsHtml += `<td class="ws-name">${escapeHtml(p)}</td>`; });
+  statsHtml += '</tr><tr>';
+
+  G.players.forEach((p, i) => {
+    const r = results[G.playerPids[i]];
+    statsHtml += `<td class="ws-val">${r.ppd} PPD</td>`;
+  });
+  statsHtml += '</tr><tr>';
+
+  G.players.forEach((p, i) => {
+    const pid = G.playerPids[i];
+    if (pid === GUEST_PID) {
+      statsHtml += `<td class="ws-avg">no history</td>`;
+      return;
+    }
+    // getCareerPPD is from players.js; getCareerWinLossX01 is below —
+    // players.js doesn't expose a win/loss helper, so we compute it here.
+    const careerPpd = getCareerPPD(pid, G.variant);
+    const wl        = getCareerWinLossX01(pid, G.variant);
+    const avgText   = careerPpd !== null
+      ? `avg ${careerPpd} · ${wl.wins}-${wl.losses}`
+      : `${wl.wins}-${wl.losses}`;
+    statsHtml += `<td class="ws-avg">${avgText}</td>`;
+  });
+  statsHtml += '</tr></table>';
+
+  // ── 3. Show it ──
   showWin(
-    winner,
-    `ROUND LIMIT  ${G.scores[winner]} LEFT`,
+    winnerName,
+    `<div style="margin-bottom:0.5rem;letter-spacing:0.08em">${subText}</div>${statsHtml}`,
     () => {
       document.getElementById('win-overlay').classList.remove('show');
       location.href = `../games/x01.html?start=${G.startScore}`;
     }
   );
-  try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
+
+  // ── 4. Clear this variant's save so Resume doesn't reappear ──
+  try { localStorage.removeItem(saveKeyFor(G.startScore)); } catch (e) {}
 }
 
-/* ── Controls ── */
+// getCareerWinLossX01(pid, variant)
+// Counts career wins/losses across x01 games for one player. Not provided
+// by players.js, so we compute it locally from getGames() — the same
+// shared darts_games array players.js reads and writes.
+// variant → e.g. '501-single-in-double-out' | null (null = all x01 games)
+function getCareerWinLossX01(pid, variant) {
+  const games = getGames();
+  let wins = 0, losses = 0;
+  games.forEach(g => {
+    if (g.gameType !== 'x01') return;
+    if (variant && g.variant !== variant) return;
+    const inGame = g.players.some(pl => pl.pid === pid);
+    if (!inGame) return;
+    if (g.winner === pid) wins++; else losses++;
+  });
+  return { wins, losses };
+}
+
+/* ══════════════════════════════════════
+   CONTROLS
+══════════════════════════════════════ */
 document.getElementById('next-btn').addEventListener('click', () => nextPlayer(false));
 
 document.getElementById('undo-btn').addEventListener('click', () => {
   if (!G.undoStack.length) { toast('NOTHING TO UNDO'); return; }
-  const s        = G.undoStack.pop();
-  G.scores        = s.scores;
-  G.history       = s.history;
-  G.currentThrows = s.currentThrows;
-  G.currentPlayer = s.currentPlayer;
-  G.round         = s.round;
+  const s = G.undoStack.pop();
+  G.scores         = s.scores;
+  G.dartsThrown    = s.dartsThrown;
+  G.hasOpened      = s.hasOpened;
+  G.history        = s.history;
+  G.currentThrows  = s.currentThrows;
+  G.currentPlayer  = s.currentPlayer;
+  G.round          = s.round;
+  G.turnStartScore = s.turnStartScore;
+  G.openedThisTurn = s.openedThisTurn;
   mult = 1;
   renderAll();
   toast('UNDONE');
@@ -469,63 +953,37 @@ document.getElementById('end-btn').addEventListener('click', () => {
 });
 
 function save() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch(e) {}
+  try { localStorage.setItem(saveKeyFor(G.startScore), JSON.stringify(G)); } catch (e) {}
 }
 </script>
+
 <!-- <script data-goatcounter="https://jucofuco.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script> -->
 
 <script>
 (function () {
-  // ── 1. CHECK SUPPORT ──────────────────────────────────────────────────────
-  // Not all browsers support Wake Lock yet. This check prevents crashes.
-  // Supported: Chrome 84+, Edge 84+, Safari 16.4+, Firefox (not yet)
   if (!('wakeLock' in navigator)) {
     console.log('[WakeLock] Not supported on this browser.');
-    return; // exit silently — game still works, screen may sleep
+    return;
   }
- 
-  // ── 2. HOLD A REFERENCE TO THE LOCK ──────────────────────────────────────
-  // We store it so we can release it when needed.
   let wakeLock = null;
- 
-  // ── 3. REQUEST THE LOCK ───────────────────────────────────────────────────
-  // This is async because the browser may need to prompt the user (it usually
-  // doesn't, but the API requires it). 'screen' is the only supported type.
   async function acquireWakeLock() {
     try {
       wakeLock = await navigator.wakeLock.request('screen');
       console.log('[WakeLock] Screen will stay on.');
- 
-      // ── 4. LISTEN FOR AUTOMATIC RELEASE ────────────────────────────────
-      // The browser releases the lock automatically when:
-      //   · The user switches to another tab
-      //   · The user minimises the browser
-      //   · The phone screen is locked manually
-      // This listener fires when any of those happen.
       wakeLock.addEventListener('release', () => {
         console.log('[WakeLock] Released by browser.');
         wakeLock = null;
       });
- 
     } catch (err) {
-      // Acquisition can fail if the page isn't visible yet, or on low battery
-      // on some devices. This is not a fatal error.
       console.warn('[WakeLock] Could not acquire:', err.name, err.message);
     }
   }
- 
-  // ── 5. RE-ACQUIRE WHEN THE USER COMES BACK ────────────────────────────────
-  // When the user switches away and back, the lock is released automatically
-  // (see step 4). This listener re-requests it when they return.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && wakeLock === null) {
       acquireWakeLock();
     }
   });
- 
-  // ── 6. START IT ────────────────────────────────────────────────────────────
-  // Request the lock as soon as the game page loads.
   acquireWakeLock();
 })();
 </script>
