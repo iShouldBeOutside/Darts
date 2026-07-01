@@ -6,7 +6,7 @@
 // ── 1. CACHE NAME ──────────────────────────────────────────────────────────
 // Change the version string (e.g. "v2") whenever you deploy an update.
 // This forces old caches to be cleared automatically.
-const CACHE_NAME = "darts-cache-v2";
+const CACHE_NAME = "darts-cache-v3";
 
 // ── 2. FILES TO PRE-CACHE ON INSTALL ───────────────────────────────────────
 // These are fetched and stored the moment the PWA is first installed.
@@ -14,9 +14,12 @@ const CACHE_NAME = "darts-cache-v2";
 const PRECACHE_URLS = [
   "/Darts/",
   "/Darts/index.html",
+  "/Darts/stats.html",
+  "/Darts/profile.html",
   "/Darts/common.css",
   "/Darts/sfx.js",
   "/Darts/utils.js",
+  "/Darts/players.js",
   "/Darts/manifest.json",
   "/Darts/icon-192.png",
   "/Darts/icon-512.png",
