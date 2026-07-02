@@ -129,8 +129,6 @@
     color: var(--led-red);
     box-shadow: 0 0 6px var(--led-red-glow);
   }
-  /* ── MPR display in scoreboard footer ── */
-  .mpr-lbl { font-size: 0.7rem; color: var(--text-dim); }
   /* ── Win overlay stats table ── */
   .win-stats {
     margin-top: 0.8rem;
@@ -147,22 +145,48 @@
   .win-stats .ws-val  { color: var(--text-bright); font-size: 0.88rem; }
   .win-stats .ws-avg  { color: var(--text-dim); font-size: 0.68rem; }
 
-  /* ── Bigger scoring grid (tgt-grid removed; scoring is tap-on-table now) ── */
-  .dots { height: 64px; gap: 7px; }
-  .dot { width: 20px; height: 20px; }
-  .dot-plus { width: 26px; height: 26px; font-size: 0.7rem; }
-  .dot-empty { font-size: 1.5rem; line-height: 64px; }
-  .tc { font-size: 1.3rem; padding: 0.6rem; }
-  .mc { padding: 0.45rem 0.2rem; }
+  /* ── Scoring grid (tgt-grid removed; scoring is tap-on-table now) ──
+     Number column (.tc) made taller/narrower; dot grid trimmed slightly
+     to make room for the new always-visible stats bar below. ── */
+  .dots { height: 54px; gap: 6px; }
+  .dot { width: 17px; height: 17px; }
+  .dot-plus { width: 22px; height: 22px; font-size: 0.62rem; }
+  .dot-empty { font-size: 1.3rem; line-height: 54px; }
+  .tc { font-size: 1.7rem; padding: 0.5rem 0.2rem; width: 32px; max-width: 32px; }
+  .mc { padding: 0.32rem 0.2rem; }
 
-  /* ── Footer rows (PTS / MPR) +50% ── */
-  .score-table tfoot td { padding: 0.675rem 0.45rem; font-size: 1.5rem; }
-  .score-table tfoot td.pts-lbl { font-size: 0.78rem; }
-  .mpr-lbl { font-size: 1.05rem; }
+  /* ── Live stats bar (record / MPR / PTS) — sits BELOW the scrollable
+     score table, so it never requires scrolling to see. ── */
+  .stats-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.3rem 0.6rem;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    border-bottom: 2px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sb-row { display: flex; }
+  .sb-cell {
+    flex: 1;
+    text-align: center;
+    line-height: 1.3;
+    color: var(--text-dim);
+  }
+  .sb-cell.active { color: var(--led-red); }
+  .sb-l1 { font-size: 0.62rem; letter-spacing: 0.03em; }
+  .sb-cell.active .sb-l1 { text-shadow: 0 0 6px var(--led-red-glow); }
+  .sb-rec { color: var(--text-dim); }
+  .sb-l2 { font-size: 0.6rem; color: var(--led-amber); text-shadow: 0 0 5px rgba(255,170,0,0.3); }
+  .sb-avg { color: var(--text-dim); text-shadow: none; }
+  .sb-pts-row .sb-cell { font-size: 0.85rem; color: var(--led-amber); text-shadow: 0 0 6px rgba(255,170,0,0.35); }
+  .sb-pts-row .sb-cell.active { color: var(--led-red); text-shadow: 0 0 6px var(--led-red-glow); }
+  .sb-pts-row .sb-pts-lbl { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; text-shadow: none; margin-left: 0.2rem; }
 
-  /* ── UNDO / NEXT: ~3x taller, 1:2 ratio unchanged ── */
-  #undo-btn { min-height: 8.5rem; font-size: 1.1rem; }
-  #next-btn { min-height: 8.5rem; font-size: 1.4rem; }
+  /* ── UNDO / NEXT: 20% shorter than before, modest font bump ── */
+  #undo-btn { min-height: 6.8rem; font-size: 1.2rem; }
+  #next-btn { min-height: 6.8rem; font-size: 1.5rem; }
 
   /* ── MISS moved inline next to throw slots ── */
   .throw-slots { align-items: center; }
@@ -261,6 +285,11 @@
     <table class="score-table" id="score-table"></table>
   </div>
 
+  <!-- Always-visible live stats: lineup W-L record + MPR (this game / career avg),
+       plus current-game PTS on its own row when scoring is active (not hit-only).
+       Lives OUTSIDE .game-scroll on purpose so it never scrolls out of view. -->
+  <div class="stats-bar" id="stats-bar"></div>
+
   <div class="input-panel">
     <div class="turn-row">
       <div>
@@ -328,6 +357,11 @@ let gameMode = 'hit-only';
 // Tap-to-triple state (turn-local, never persisted)
 let tapPending = null;
 let tapCount   = {};
+
+// Live-stats caches — computed once at launch() since neither the lineup
+// record (past games) nor career MPR (past games) change during this game.
+let lineupRecord   = {};
+let careerMprCache = {};
 
 // ── Player slot state ──────────────────────────────────────────────────────────
 // slots[] holds the return value of buildPlayerSlot() for each player position.
@@ -528,6 +562,14 @@ function launch() {
   mult       = 1;
   tapPending = null;
   tapCount   = {};
+
+  // Cache lineup record + career MPR once — see declarations above for why.
+  lineupRecord   = getLineupRecord(G.playerPids);
+  careerMprCache = {};
+  G.playerPids.forEach(pid => {
+    careerMprCache[pid] = (pid !== GUEST_PID) ? getCareerMPR(pid) : null;
+  });
+
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('game-screen').style.display  = 'flex';
   renderAll();
@@ -538,6 +580,7 @@ function launch() {
 ══════════════════════════════════════ */
 function renderAll() {
   renderBoard();
+  renderStatsBar();
   renderSlots();
   if (tapPending !== null) renderPendingTap();
   renderTurnName();
@@ -570,34 +613,89 @@ function renderBoard() {
     h += '</tr>';
   });
 
-  h += '</tbody><tfoot>';
+  h += '</tbody>';
 
-  // PTS row — hidden in hit-only mode
-  if (!G.hitOnly) {
-    h += '<tr>'
-      + '<td class="pts-lbl" style="background:var(--panel);border-right:1px solid var(--border)">PTS</td>';
-    G.players.forEach(p => {
-      h += `<td${p === cp
-        ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
-        : ''}>${G.points[p] || 0}</td>`;
-    });
-    h += '</tr>';
-  }
-
-  // MPR row — always shown
-  h += '<tr>'
-    + '<td class="mpr-lbl" style="background:var(--panel);border-right:1px solid var(--border)">MPR</td>';
-  G.players.forEach(p => {
-    const marks  = G.marks[p]  || 0;
-    const rounds = G.rounds[p] || 0;
-    const mpr    = rounds > 0 ? (marks / rounds).toFixed(2) : '—';
-    h += `<td${p === cp
-      ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
-      : ''}>${mpr}</td>`;
-  });
-  h += '</tr></tfoot>';
+  // NOTE: PTS/MPR used to live here as a <tfoot>, but that put them inside
+  // .game-scroll — with 7 target rows, the footer could scroll off-screen.
+  // They now live in #stats-bar (see renderStatsBar()), which sits outside
+  // the scrolling area and is always visible.
 
   document.getElementById('score-table').innerHTML = h;
+}
+
+/* ══════════════════════════════════════
+   LIVE STATS BAR — record / MPR / PTS
+   Always visible (lives outside .game-scroll).
+══════════════════════════════════════ */
+
+// getLineupRecord(pids)
+// Looks through past logged games (players.js → getGames()) for CRICKET
+// games (any variant) that had this EXACT same set of players, and tallies
+// wins/losses per pid. Guests share one GUEST_PID across different real
+// people, so a "record" for Guest would be meaningless — we skip them and
+// the UI shows a dash instead (handled in renderStatsBar).
+function getLineupRecord(pids) {
+  const record = {};
+  pids.forEach(pid => { record[pid] = { wins: 0, losses: 0 }; });
+
+  let games = [];
+  try { games = getGames() || []; } catch (e) { games = []; }
+
+  const pidSet = new Set(pids);
+  games.forEach(g => {
+    if (g.gameType !== 'cricket') return;
+    const gPids = (g.players || []).map(p => p.pid);
+    if (gPids.length !== pids.length) return;
+    if (!gPids.every(p => pidSet.has(p))) return; // must be the exact same lineup
+
+    pids.forEach(pid => {
+      if (pid === GUEST_PID) return;
+      if (g.winner === pid) record[pid].wins++;
+      else record[pid].losses++;
+    });
+  });
+  return record;
+}
+
+// renderStatsBar()
+// Row 1: name + lineup W-L record, and this-game MPR / career-avg MPR.
+// Row 2 (only when scoring is active, i.e. not hit-only): current PTS.
+function renderStatsBar() {
+  const cp  = G.players[G.currentPlayer];
+  const bar = document.getElementById('stats-bar');
+  if (!bar) return;
+
+  let h = '<div class="sb-row">';
+  G.players.forEach((p, i) => {
+    const pid      = G.playerPids[i];
+    const isActive = p === cp;
+    const rec      = lineupRecord[pid];
+    const recTxt   = (rec && pid !== GUEST_PID) ? `${rec.wins}-${rec.losses}` : '—';
+
+    const rounds   = G.rounds[p] || 0;
+    const marks    = G.marks[p]  || 0;
+    const gameMpr  = rounds > 0 ? (marks / rounds).toFixed(2) : '—';
+    const avgMprV  = careerMprCache[pid];
+    const avgMpr   = (avgMprV !== null && avgMprV !== undefined) ? avgMprV : '—';
+
+    h += `<div class="sb-cell${isActive ? ' active' : ''}">`
+       +   `<div class="sb-l1">${p} <span class="sb-rec">${recTxt}</span></div>`
+       +   `<div class="sb-l2">${gameMpr} <span class="sb-avg">/ ${avgMpr}</span> MPR</div>`
+       + `</div>`;
+  });
+  h += '</div>';
+
+  // PTS row — only meaningful when points are being scored (not hit-only)
+  if (!G.hitOnly) {
+    h += '<div class="sb-row sb-pts-row">';
+    G.players.forEach(p => {
+      const isActive = p === cp;
+      h += `<div class="sb-cell${isActive ? ' active' : ''}">${G.points[p] || 0}<span class="sb-pts-lbl">PTS</span></div>`;
+    });
+    h += '</div>';
+  }
+
+  bar.innerHTML = h;
 }
 
 function dotsHtml(n) {
