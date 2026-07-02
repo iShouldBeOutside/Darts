@@ -610,6 +610,833 @@ function dotsHtml(n) {
   return `<div class="dots">${s}</div>`;
 }
 
+function renderSlots() {
+  for (let i = 0; i < 3; i++) {
+    const sl = document.getElementById(`ts${i}`);
+    const th = G.currentThrows[i];
+    if (th === undefined) {
+      sl.textContent = ''; sl.className = 'tslot';
+    } else if (th === null) {
+      sl.textContent = 'MISS'; sl.classNa
+// onSlotChange()
+// Fires whenever ANY slot's selection changes (a player picked, Guest
+// picked, or a brand-new player saved & selected).
+//
+// We deliberately do NOT rebuild the slots here. Each slot keeps its own
+// selection in a local variable inside buildPlayerSlot — rebuilding would
+// throw that variable away and reset the slot back to "— SELECT PLAYER —"
+// the instant you chose someone (this was the bug: picking a player or
+// Guest never "stuck").
+//
+// Sibling exclusion (not letting the same player appear in two slots)
+// still works fine without a rebuild: every time a slot's OWN dropdown is
+// opened, it calls allSlotStates() fresh to see what siblings currently
+// have selected. So there's nothing else this function needs to do.
+function onSlotChange() {
+  // Intentionally empty — see comment above.
+}
+
+/* ══════════════════════════════════════
+   NUMBER PICKER (unchanged from original)
+══════════════════════════════════════ */
+function buildNumGrid() {
+  const grid = document.getElementById('num-grid');
+  grid.innerHTML = '';
+  ALL_NUMS.forEach(n => {
+    const d = document.createElement('div');
+    d.className = `num-chip${n === 'B' ? ' bull' : ''}${selNums.has(n) ? ' on' : ''}`;
+    d.textContent = n === 'B' ? 'B' : n;
+    d.addEventListener('click', () => toggleNum(n));
+    grid.appendChild(d);
+  });
+  document.getElementById('sel-count').textContent = selNums.size;
+}
+
+function toggleNum(n) {
+  if (selNums.has(n)) {
+    selNums.delete(n);
+  } else {
+    if (selNums.size >= 7) { toast('MAX 7 NUMBERS'); return; }
+    selNums.add(n);
+  }
+  buildNumGrid();
+}
+
+document.getElementById('random-btn').addEventListener('click', () => {
+  selNums.clear();
+  const pool = [...ALL_NUMS];
+  while (selNums.size < 7) {
+    const i = Math.floor(Math.random() * pool.length);
+    selNums.add(pool.splice(i, 1)[0]);
+  }
+  buildNumGrid();
+});
+
+/* ══════════════════════════════════════
+   SETUP — player count chips
+══════════════════════════════════════ */
+document.getElementById('player-chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  selN = +c.dataset.n;
+  document.querySelectorAll('#player-chips .chip').forEach(x =>
+    x.classList.toggle('on', x === c)
+  );
+  // Rebuild dropdowns for the new count (clears selections — see note above)
+  rebuildSlotsPreservingSelections();
+});
+
+/* ══════════════════════════════════════
+   SETUP — mode toggle (3-way)
+══════════════════════════════════════ */
+document.getElementById('mode-toggle').addEventListener('click', e => {
+  const chip = e.target.closest('.mode-chip'); if (!chip) return;
+  gameMode = chip.dataset.mode; // 'regular', 'cutthroat', or 'hit-only'
+  document.querySelectorAll('.mode-chip').forEach(c =>
+    c.classList.toggle('on', c === chip)
+  );
+});
+
+/* ══════════════════════════════════════
+   INITIAL BUILD
+══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  rebuildSlotsPreservingSelections();
+  buildNumGrid();
+  try {
+    if (localStorage.getItem(SAVE_KEY)) document.getElementById('resume-btn').style.display = '';
+  } catch(e) {}
+});
+
+/* ══════════════════════════════════════
+   START GAME
+══════════════════════════════════════ */
+document.getElementById('start-btn').addEventListener('click', () => {
+  if (selNums.size !== 7) { toast(`NEED 7 NUMBERS (${selNums.size}/7)`); return; }
+
+  // Validate that all player slots have a selection
+  const selections = allSlotStates();
+  for (let i = 0; i < selN; i++) {
+    if (!selections[i] || !selections[i].pid) {
+      toast(`SELECT PLAYER ${i + 1}`); return;
+    }
+  }
+
+  G = freshState();
+
+  // Store player names (for display) and pids (for stat logging)
+  G.players    = selections.slice(0, selN).map(s => s.name);
+  G.playerPids = selections.slice(0, selN).map(s => s.pid);
+
+  // Store which mode we're playing
+  G.regular    = gameMode === 'regular';
+  G.cutthroat  = gameMode === 'cutthroat';
+  G.hitOnly    = gameMode === 'hit-only';
+  G.variant    = gameMode; // 'regular', 'cutthroat', or 'hit-only'
+
+  G.maxRounds  = +document.getElementById('max-rounds').value;
+
+  const nums  = [...selNums].filter(n => n !== 'B').sort((a, b) => b - a);
+  G.targets   = selNums.has('B') ? [...nums, 'B'] : nums;
+
+  G.players.forEach(p => {
+    G.hits[p]   = {};
+    G.points[p] = 0;
+    G.marks[p]  = 0;    // NEW: total marks earned by this player
+    G.rounds[p] = 0;    // NEW: full rounds completed by this player
+    G.targets.forEach(t => G.hits[p][t] = 0);
+  });
+
+  launch();
+});
+
+document.getElementById('resume-btn').addEventListener('click', () => {
+  try { G = JSON.parse(localStorage.getItem(SAVE_KEY)); launch(); }
+  catch(e) { toast('LOAD ERROR'); }
+});
+
+function freshState() {
+  return {
+    players: [], playerPids: [], targets: [],
+    cutthroat: false, hitOnly: false, variant: 'regular',
+    maxRounds: 0,
+    hits: {}, points: {},
+    marks: {},   // { playerName: totalMarksInt }
+    rounds: {},  // { playerName: completedRoundsInt }
+    currentPlayer: 0, currentThrows: [], round: 1, history: []
+  };
+}
+
+/* ══════════════════════════════════════
+   LAUNCH (unchanged from original)
+══════════════════════════════════════ */
+function launch() {
+  mult       = 1;
+  tapPending = null;
+  tapCount   = {};
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display  = 'flex';
+  renderAll();
+}
+
+/* ══════════════════════════════════════
+   RENDER
+══════════════════════════════════════ */
+function renderAll() {
+  renderBoard();
+  renderSlots();
+  if (tapPending !== null) renderPendingTap();
+  renderTurnName();
+  renderBadge();
+}
+
+function renderBoard() {
+  const cp = G.players[G.currentPlayer];
+
+  let h = '<thead><tr>'
+    + '<th style="background:var(--panel);border-right:1px solid var(--border);'
+    + 'position:sticky;top:0;z-index:6;min-width:34px"></th>';
+  G.players.forEach(p => {
+    h += `<th class="${p === cp ? 'ah' : ''}">${p}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+
+  G.targets.forEach(t => {
+    const bull      = t === 'B';
+    const allClosed = G.players.every(p => G.hits[p][t] >= 3);
+    h += `<tr><td class="tc${bull ? ' bull' : ''}${allClosed ? ' done' : ''}">${bull ? 'B' : t}</td>`;
+    G.players.forEach(p => {
+      const isActive     = p === cp;
+      const pendingExtra = (isActive && tapPending === t) ? (tapCount[t] || 0) : 0;
+      const displayHits  = G.hits[p][t] + pendingExtra;
+      h += `<td class="mc${isActive ? ' ac' : ' other'}"${
+        isActive ? ` onclick="tapCell('${p}','${t}')"` : ''
+      }>${dotsHtml(displayHits)}</td>`;
+    });
+    h += '</tr>';
+  });
+
+  h += '</tbody><tfoot>';
+
+  // PTS row — hidden in hit-only mode
+  if (!G.hitOnly) {
+    h += '<tr>'
+      + '<td class="pts-lbl" style="background:var(--panel);border-right:1px solid var(--border)">PTS</td>';
+    G.players.forEach(p => {
+      h += `<td${p === cp
+        ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
+        : ''}>${G.points[p] || 0}</td>`;
+    });
+    h += '</tr>';
+  }
+
+  // MPR row — always shown
+  h += '<tr>'
+    + '<td class="mpr-lbl" style="background:var(--panel);border-right:1px solid var(--border)">MPR</td>';
+  G.players.forEach(p => {
+    const marks  = G.marks[p]  || 0;
+    const rounds = G.rounds[p] || 0;
+    const mpr    = rounds > 0 ? (marks / rounds).toFixed(2) : '—';
+    h += `<td${p === cp
+      ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
+      : ''}>${mpr}</td>`;
+  });
+  h += '</tr></tfoot>';
+
+  document.getElementById('score-table').innerHTML = h;
+}
+
+function dotsHtml(n) {
+  if (n === 0) return '<div class="dots"><span class="dot-empty">·</span></div>';
+  const filled = Math.min(n, 3), empty = 3 - filled;
+  let s = '';
+  for (let i = 0; i < filled; i++) s += '<span class="dot on"></span>';
+  for (let i = 0; i < empty;  i++) s += '<span class="dot off"></span>';
+  if (n > 3) s += `<span class="dot-plus">+${n - 3}</span>`;
+  return `<div class="dots">${s}</div>`;
+}
+
+
+
+  const miss = document.createElement('button');
+  miss.className   = 'tbtn miss-btn';
+  miss.textContent = 'MISS';
+  miss.addEventListener('click', () => {
+    pushHistory    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .ps-selected:active { opacity: 0.7; }
+  /* Once a player is chosen, highlight their name */
+  .ps-chosen-filled { color: var(--led-red); }
+  .ps-caret { font-size: 0.7rem; color: var(--text-dim); }
+  /* The dropdown panel */
+  .ps-dropdown {
+    position: absolute;
+    left: 0; right: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 0.35rem 0.35rem;
+    z-index: 100;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  /* Search input inside dropdown */
+  .ps-search {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-bright);
+    font-family: var(--seg);
+    font-size: 0.8rem;
+    padding: 0.5rem 0.8rem;
+    outline: none;
+    letter-spacing: 0.06em;
+  }
+  /* Each row in the dropdown */
+  .ps-row {
+    padding: 0.55rem 0.8rem;
+    font-size: 0.82rem;
+    letter-spacing: 0.05em;
+    color: var(--text-bright);
+    cursor: pointer;
+  }
+  .ps-row:active, .ps-row:hover { background: var(--border); }
+  /* Special styling for guest and add-new rows */
+  .ps-guest   { color: var(--text-dim); font-style: italic; }
+  .ps-add-new { color: var(--led-amber); border-top: 1px solid var(--border); }
+  /* The inline new-player form */
+  .ps-new-form {
+    padding: 0.6rem 0.8rem 0.8rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .ps-new-hint {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin: 0.3rem 0 0.2rem;
+  }
+  .ps-new-cancel {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--seg);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    padding: 0.3rem 0;
+    cursor: pointer;
+    display: block;
+    margin-top: 0.2rem;
+  }
+  /* ── Mode toggle (3-way: REGULAR / CUT-THROAT / HIT ONLY) ── */
+  .mode-toggle {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .mode-chip {
+    flex: 1;
+    text-align: center;
+    padding: 0.45rem 0.5rem;
+    font-family: var(--seg);
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .mode-chip.on {
+    border-color: var(--led-red);
+    color: var(--led-red);
+    box-shadow: 0 0 6px var(--led-red-glow);
+  }
+  /* ── MPR display in scoreboard footer ── */
+  .mpr-lbl { font-size: 0.7rem; color: var(--text-dim); }
+  /* ── Win overlay stats table ── */
+  .win-stats {
+    margin-top: 0.8rem;
+    width: 100%;
+    font-size: 0.78rem;
+    border-collapse: collapse;
+  }
+  .win-stats td {
+    padding: 0.2rem 0.5rem;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .win-stats .ws-name { font-size: 0.7rem; letter-spacing: 0.06em; }
+  .win-stats .ws-val  { color: var(--text-bright); font-size: 0.88rem; }
+  .win-stats .ws-avg  { color: var(--text-dim); font-size: 0.68rem; }
+
+  /* ── Bigger scoring grid (tgt-grid removed; scoring is tap-on-table now) ── */
+  .dots { height: 64px; gap: 7px; }
+  .dot { width: 20px; height: 20px; }
+  .dot-plus { width: 26px; height: 26px; font-size: 0.7rem; }
+  .dot-empty { font-size: 1.5rem; line-height: 64px; }
+  .tc { font-size: 1.3rem; padding: 0.6rem; }
+  .mc { padding: 0.45rem 0.2rem; }
+
+  /* ── Footer rows (PTS / MPR) +50% ── */
+  .score-table tfoot td { padding: 0.675rem 0.45rem; font-size: 1.5rem; }
+  .score-table tfoot td.pts-lbl { font-size: 0.78rem; }
+  .mpr-lbl { font-size: 1.05rem; }
+
+  /* ── UNDO / NEXT: ~3x taller, 1:2 ratio unchanged ── */
+  #undo-btn { min-height: 8.5rem; font-size: 1.1rem; }
+  #next-btn { min-height: 8.5rem; font-size: 1.4rem; }
+
+  /* ── MISS moved inline next to throw slots ── */
+  .throw-slots { align-items: center; }
+  .miss-inline {
+    width: auto; height: 34px;
+    padding: 0 0.6rem; margin-left: 0.4rem;
+    font-size: 0.82rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+</style>
+<script src="../sfx.js"></script>
+<script src="../utils.js"></script>
+<script src="../players.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     SETUP SCREEN
+══════════════════════════════════════ -->
+<div id="setup-screen" class="setup-wrap">
+
+  <div class="setup-top">
+    <a class="back-btn" href="../index.html">◂ HUB</a>
+    <div class="setup-title">CRICKET</div>
+  </div>
+
+  <!-- ── Player count: 1–4 only ── -->
+  <div class="s-section">
+    <span class="s-label">[ PLAYERS ]</span>
+    <div class="chip-row" id="player-chips">
+      <div class="chip" data-n="1">1</div>
+      <div class="chip on" data-n="2">2</div>
+      <div class="chip" data-n="3">3</div>
+      <div class="chip" data-n="4">4</div>
+    </div>
+  </div>
+
+  <!-- ── Player selection slots (dropdowns, built by players.js) ── -->
+  <div class="s-section">
+    <span class="s-label">[ SELECT PLAYERS ]</span>
+    <div id="player-slots"></div>
+  </div>
+
+  <!-- ── Number picker (unchanged) ── -->
+  <div class="s-section">
+    <span class="s-label">[ SELECT 7 NUMBERS ]</span>
+    <div class="num-count">Selected: <span id="sel-count">0</span> / 7</div>
+    <div class="num-grid" id="num-grid"></div>
+    <button class="btn-random" id="random-btn">[ RANDOM 7 ]</button>
+  </div>
+
+  <!-- ── Round limit (unchanged) ── -->
+  <div class="s-section">
+    <span class="s-label">[ ROUND LIMIT ]</span>
+    <div class="row2">
+      <input class="led-input-sm" type="number" id="max-rounds" value="0" min="0" max="99">
+      <span class="row2-hint">max rounds per player<br>0 = unlimited</span>
+    </div>
+  </div>
+
+  <!-- ── Game mode: 3-way toggle ── -->
+  <div class="s-section">
+    <span class="s-label">[ MODE ]</span>
+    <div class="mode-toggle" id="mode-toggle">
+      <div class="mode-chip" data-mode="regular">REGULAR</div>
+      <div class="mode-chip" data-mode="cutthroat">CUT-THROAT</div>
+      <div class="mode-chip on" data-mode="hit-only">HIT ONLY</div>
+    </div>
+  </div>
+
+  <button class="btn-start" id="start-btn">[ START GAME ]</button>
+  <button class="btn-resume" id="resume-btn" style="display:none">[ RESUME SAVED ]</button>
+
+</div>
+
+<!-- ══════════════════════════════════════
+     GAME SCREEN
+══════════════════════════════════════ -->
+<div id="game-screen" class="game-wrap" style="display:none">
+
+  <div class="top-bar">
+    <div style="display:flex;align-items:center">
+      <span class="game-logo">CRICKET</span>
+      <span class="r-badge" id="r-badge">R1</span>
+    </div>
+    <div class="top-btns">
+      <button class="theme-btn" id="theme-btn">☀</button>
+      <button class="top-btn" id="save-btn">SAVE</button>
+      <button class="top-btn danger" id="end-btn">END</button>
+    </div>
+  </div>
+
+  <div class="last-bar" id="last-bar">*** FINAL ROUND ***</div>
+
+  <div class="game-scroll">
+    <table class="score-table" id="score-table"></table>
+  </div>
+
+  <div class="input-panel">
+    <div class="turn-row">
+      <div>
+        <div class="turn-lbl">NOW THROWING</div>
+        <div class="turn-name" id="turn-name">---</div>
+      </div>
+      <div class="throw-slots">
+        <div class="tslot" id="ts0"></div>
+        <div class="tslot" id="ts1"></div>
+        <div class="tslot" id="ts2"></div>
+        <button class="tbtn miss-btn miss-inline" id="miss-btn">MISS</button>
+      </div>
+    </div>
+
+    <!-- TRIPLE button removed; tap a number 3× to mark triple -->
+    <!-- <div class="mult-row" id="mult-row">
+      <button class="mbtn active" data-m="1">SINGLE</button>
+      <button class="mbtn" data-m="2">DOUBLE</button>
+    </div> -->
+
+    <div class="act-row">
+      <button class="btn-undo" id="undo-btn">UNDO</button>
+      <button class="btn-next" id="next-btn">NEXT ››</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Shared win overlay -->
+<div id="win-overlay">
+  <div class="win-icon">🎯</div>
+  <div style="text-align:center">
+    <div class="win-lbl">WINNER</div>
+    <div class="win-name" id="win-name">---</div>
+  </div>
+  <div class="win-sub" id="win-sub"></div>
+  <div class="win-btns">
+    <button class="btn-start" id="win-new-btn" style="font-size:1rem;padding:0.8rem">NEW GAME</button>
+    <button class="btn-resume" onclick="document.getElementById('win-overlay').classList.remove('show')">VIEW BOARD</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script>
+'use strict';
+
+/* ── Init ── */
+initTheme();
+document.addEventListener('DOMContentLoaded', () => {
+  const tb = document.getElementById('theme-btn');
+  if (tb) tb.addEventListener('click', () => { toggleTheme(); SFX.hit(); });
+});
+
+const SAVE_KEY  = 'crick4';
+const ALL_NUMS  = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,'B'];
+
+let G    = {};
+let mult = 1;
+let selNums = new Set([15, 16, 17, 18, 19, 20, 'B']);
+let selN    = 2;
+
+// gameMode holds which of the 3 modes is active: 'regular', 'cutthroat', 'hit-only'
+let gameMode = 'hit-only';
+
+// Tap-to-triple state (turn-local, never persisted)
+let tapPending = null;
+let tapCount   = {};
+
+// ── Player slot state ──────────────────────────────────────────────────────────
+// slots[] holds the return value of buildPlayerSlot() for each player position.
+// Each slot has .getPid() and .getName() methods.
+let slots = [];
+
+// allSlotStates() returns the current { pid, name } selection for every slot.
+// This is passed to buildPlayerSlot so slots can exclude each other's selections.
+function allSlotStates() {
+  return slots.map(s => ({
+    pid:  s ? s.getPid()  : null,
+    name: s ? s.getName() : '',
+  }));
+}
+
+// rebuildSlotsPreservingSelections(n)
+// Renders n player-selection dropdowns into #player-slots.
+// Called on page load and whenever the player count chip changes
+// (changing the number of players is the one case where it's OK
+// to clear selections and start fresh).
+//
+// IMPORTANT: the 4th argument to buildPlayerSlot is an onChange callback
+// that fires every time a player is picked in THAT slot. We pass a no-op
+// here on purpose — see onSlotChange() below for why.
+function rebuildSlotsPreservingSelections() {
+  const n = selN;
+  slots = [];
+  const container = document.getElementById('player-slots');
+  container.innerHTML = '';
+
+  for (let i = 0; i < n; i++) {
+    const wrapper = document.createElement('div');
+    wrapper.style.marginBottom = '0.4rem';
+    container.appendChild(wrapper);
+
+    const slot = buildPlayerSlot(
+      wrapper,
+      i,
+      allSlotStates,
+      onSlotChange
+    );
+    slots.push(slot);
+  }
+}
+
+// onSlotChange()
+// Fires whenever ANY slot's selection changes (a player picked, Guest
+// picked, or a brand-new player saved & selected).
+//
+// We deliberately do NOT rebuild the slots here. Each slot keeps its own
+// selection in a local variable inside buildPlayerSlot — rebuilding would
+// throw that variable away and reset the slot back to "— SELECT PLAYER —"
+// the instant you chose someone (this was the bug: picking a player or
+// Guest never "stuck").
+//
+// Sibling exclusion (not letting the same player appear in two slots)
+// still works fine without a rebuild: every time a slot's OWN dropdown is
+// opened, it calls allSlotStates() fresh to see what siblings currently
+// have selected. So there's nothing else this function needs to do.
+function onSlotChange() {
+  // Intentionally empty — see comment above.
+}
+
+/* ══════════════════════════════════════
+   NUMBER PICKER (unchanged from original)
+══════════════════════════════════════ */
+function buildNumGrid() {
+  const grid = document.getElementById('num-grid');
+  grid.innerHTML = '';
+  ALL_NUMS.forEach(n => {
+    const d = document.createElement('div');
+    d.className = `num-chip${n === 'B' ? ' bull' : ''}${selNums.has(n) ? ' on' : ''}`;
+    d.textContent = n === 'B' ? 'B' : n;
+    d.addEventListener('click', () => toggleNum(n));
+    grid.appendChild(d);
+  });
+  document.getElementById('sel-count').textContent = selNums.size;
+}
+
+function toggleNum(n) {
+  if (selNums.has(n)) {
+    selNums.delete(n);
+  } else {
+    if (selNums.size >= 7) { toast('MAX 7 NUMBERS'); return; }
+    selNums.add(n);
+  }
+  buildNumGrid();
+}
+
+document.getElementById('random-btn').addEventListener('click', () => {
+  selNums.clear();
+  const pool = [...ALL_NUMS];
+  while (selNums.size < 7) {
+    const i = Math.floor(Math.random() * pool.length);
+    selNums.add(pool.splice(i, 1)[0]);
+  }
+  buildNumGrid();
+});
+
+/* ══════════════════════════════════════
+   SETUP — player count chips
+══════════════════════════════════════ */
+document.getElementById('player-chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  selN = +c.dataset.n;
+  document.querySelectorAll('#player-chips .chip').forEach(x =>
+    x.classList.toggle('on', x === c)
+  );
+  // Rebuild dropdowns for the new count (clears selections — see note above)
+  rebuildSlotsPreservingSelections();
+});
+
+/* ══════════════════════════════════════
+   SETUP — mode toggle (3-way)
+══════════════════════════════════════ */
+document.getElementById('mode-toggle').addEventListener('click', e => {
+  const chip = e.target.closest('.mode-chip'); if (!chip) return;
+  gameMode = chip.dataset.mode; // 'regular', 'cutthroat', or 'hit-only'
+  document.querySelectorAll('.mode-chip').forEach(c =>
+    c.classList.toggle('on', c === chip)
+  );
+});
+
+/* ══════════════════════════════════════
+   INITIAL BUILD
+══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  rebuildSlotsPreservingSelections();
+  buildNumGrid();
+  try {
+    if (localStorage.getItem(SAVE_KEY)) document.getElementById('resume-btn').style.display = '';
+  } catch(e) {}
+});
+
+/* ══════════════════════════════════════
+   START GAME
+══════════════════════════════════════ */
+document.getElementById('start-btn').addEventListener('click', () => {
+  if (selNums.size !== 7) { toast(`NEED 7 NUMBERS (${selNums.size}/7)`); return; }
+
+  // Validate that all player slots have a selection
+  const selections = allSlotStates();
+  for (let i = 0; i < selN; i++) {
+    if (!selections[i] || !selections[i].pid) {
+      toast(`SELECT PLAYER ${i + 1}`); return;
+    }
+  }
+
+  G = freshState();
+
+  // Store player names (for display) and pids (for stat logging)
+  G.players    = selections.slice(0, selN).map(s => s.name);
+  G.playerPids = selections.slice(0, selN).map(s => s.pid);
+
+  // Store which mode we're playing
+  G.regular    = gameMode === 'regular';
+  G.cutthroat  = gameMode === 'cutthroat';
+  G.hitOnly    = gameMode === 'hit-only';
+  G.variant    = gameMode; // 'regular', 'cutthroat', or 'hit-only'
+
+  G.maxRounds  = +document.getElementById('max-rounds').value;
+
+  const nums  = [...selNums].filter(n => n !== 'B').sort((a, b) => b - a);
+  G.targets   = selNums.has('B') ? [...nums, 'B'] : nums;
+
+  G.players.forEach(p => {
+    G.hits[p]   = {};
+    G.points[p] = 0;
+    G.marks[p]  = 0;    // NEW: total marks earned by this player
+    G.rounds[p] = 0;    // NEW: full rounds completed by this player
+    G.targets.forEach(t => G.hits[p][t] = 0);
+  });
+
+  launch();
+});
+
+document.getElementById('resume-btn').addEventListener('click', () => {
+  try { G = JSON.parse(localStorage.getItem(SAVE_KEY)); launch(); }
+  catch(e) { toast('LOAD ERROR'); }
+});
+
+function freshState() {
+  return {
+    players: [], playerPids: [], targets: [],
+    cutthroat: false, hitOnly: false, variant: 'regular',
+    maxRounds: 0,
+    hits: {}, points: {},
+    marks: {},   // { playerName: totalMarksInt }
+    rounds: {},  // { playerName: completedRoundsInt }
+    currentPlayer: 0, currentThrows: [], round: 1, history: []
+  };
+}
+
+/* ══════════════════════════════════════
+   LAUNCH (unchanged from original)
+══════════════════════════════════════ */
+function launch() {
+  mult       = 1;
+  tapPending = null;
+  tapCount   = {};
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display  = 'flex';
+  renderAll();
+}
+
+/* ══════════════════════════════════════
+   RENDER
+══════════════════════════════════════ */
+function renderAll() {
+  renderBoard();
+  renderSlots();
+  if (tapPending !== null) renderPendingTap();
+  renderTurnName();
+  renderBadge();
+}
+
+function renderBoard() {
+  const cp = G.players[G.currentPlayer];
+
+  let h = '<thead><tr>'
+    + '<th style="background:var(--panel);border-right:1px solid var(--border);'
+    + 'position:sticky;top:0;z-index:6;min-width:34px"></th>';
+  G.players.forEach(p => {
+    h += `<th class="${p === cp ? 'ah' : ''}">${p}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+
+  G.targets.forEach(t => {
+    const bull      = t === 'B';
+    const allClosed = G.players.every(p => G.hits[p][t] >= 3);
+    h += `<tr><td class="tc${bull ? ' bull' : ''}${allClosed ? ' done' : ''}">${bull ? 'B' : t}</td>`;
+    G.players.forEach(p => {
+      const isActive     = p === cp;
+      const pendingExtra = (isActive && tapPending === t) ? (tapCount[t] || 0) : 0;
+      const displayHits  = G.hits[p][t] + pendingExtra;
+      h += `<td class="mc${isActive ? ' ac' : ' other'}"${
+        isActive ? ` onclick="tapCell('${p}','${t}')"` : ''
+      }>${dotsHtml(displayHits)}</td>`;
+    });
+    h += '</tr>';
+  });
+
+  h += '</tbody><tfoot>';
+
+  // PTS row — hidden in hit-only mode
+  if (!G.hitOnly) {
+    h += '<tr>'
+      + '<td class="pts-lbl" style="background:var(--panel);border-right:1px solid var(--border)">PTS</td>';
+    G.players.forEach(p => {
+      h += `<td${p === cp
+        ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
+        : ''}>${G.points[p] || 0}</td>`;
+    });
+    h += '</tr>';
+  }
+
+  // MPR row — always shown
+  h += '<tr>'
+    + '<td class="mpr-lbl" style="background:var(--panel);border-right:1px solid var(--border)">MPR</td>';
+  G.players.forEach(p => {
+    const marks  = G.marks[p]  || 0;
+    const rounds = G.rounds[p] || 0;
+    const mpr    = rounds > 0 ? (marks / rounds).toFixed(2) : '—';
+    h += `<td${p === cp
+      ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
+      : ''}>${mpr}</td>`;
+  });
+  h += '</tr></tfoot>';
+
+  document.getElementById('score-table').innerHTML = h;
+}
+
+function dotsHtml(n) {
+  if (n === 0) return '<div class="dots"><span class="dot-empty">·</span></div>';
+  const filled = Math.min(n, 3), empty = 3 - filled;
+  let s = '';
+  for (let i = 0; i < filled; i++) s += '<span class="dot on"></span>';
+  for (let i = 0; i < empty;  i++) s += '<span class="dot off"></span>';
+  if (n > 3) s += `<span class="dot-plus">+${n - 3}</span>`;
+  return `<div class="dots">${s}</div>`;
+}
+
   const miss = document.createElement('button');
   miss.className   = 'tbtn miss-btn';
   miss.textContent = 'MISS';
@@ -681,7 +1508,635 @@ function pushHistory() {
     hits:          JSON.parse(JSON.stringify(G.hits)),
     points:        JSON.parse(JSON.stringify(G.points)),
     marks:         JSON.parse(JSON.stringify(G.marks)),
-    rounds:        JSON.parse(JSON.stringify(G.rounds)),
+    rounds:        JSON.par<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CRICKET · Darts</title>
+<link rel="stylesheet" href="../common.css">
+<style>
+  /* Pending (uncommitted) tap — shown after 1st or 2nd tap on a number */
+  .tslot.pending {
+    color: var(--led-amber, #ffaa00);
+    border-color: var(--led-amber, #ffaa00);
+    box-shadow: 0 0 6px var(--led-amber, #ffaa00);
+    opacity: 0.8;
+  }
+  /* Target button glow while being tapped (1 or 2 taps, not yet committed) */
+  .tbtn.tapping {
+    outline: 2px solid var(--led-amber, #ffaa00);
+    box-shadow: 0 0 8px var(--led-amber, #ffaa00);
+  }
+  /* ── Player selection slots ── */
+  .ps-slot {
+    position: relative;
+    margin-bottom: 0.6rem;
+  }
+  /* The "selected player" bar that the user taps to open the dropdown */
+  .ps-selected {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 0.55rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .ps-selected:active { opacity: 0.7; }
+  /* Once a player is chosen, highlight their name */
+  .ps-chosen-filled { color: var(--led-red); }
+  .ps-caret { font-size: 0.7rem; color: var(--text-dim); }
+  /* The dropdown panel */
+  .ps-dropdown {
+    position: absolute;
+    left: 0; right: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 0.35rem 0.35rem;
+    z-index: 100;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  /* Search input inside dropdown */
+  .ps-search {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-bright);
+    font-family: var(--seg);
+    font-size: 0.8rem;
+    padding: 0.5rem 0.8rem;
+    outline: none;
+    letter-spacing: 0.06em;
+  }
+  /* Each row in the dropdown */
+  .ps-row {
+    padding: 0.55rem 0.8rem;
+    font-size: 0.82rem;
+    letter-spacing: 0.05em;
+    color: var(--text-bright);
+    cursor: pointer;
+  }
+  .ps-row:active, .ps-row:hover { background: var(--border); }
+  /* Special styling for guest and add-new rows */
+  .ps-guest   { color: var(--text-dim); font-style: italic; }
+  .ps-add-new { color: var(--led-amber); border-top: 1px solid var(--border); }
+  /* The inline new-player form */
+  .ps-new-form {
+    padding: 0.6rem 0.8rem 0.8rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .ps-new-hint {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin: 0.3rem 0 0.2rem;
+  }
+  .ps-new-cancel {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--seg);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    padding: 0.3rem 0;
+    cursor: pointer;
+    display: block;
+    margin-top: 0.2rem;
+  }
+  /* ── Mode toggle (3-way: REGULAR / CUT-THROAT / HIT ONLY) ── */
+  .mode-toggle {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .mode-chip {
+    flex: 1;
+    text-align: center;
+    padding: 0.45rem 0.5rem;
+    font-family: var(--seg);
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .mode-chip.on {
+    border-color: var(--led-red);
+    color: var(--led-red);
+    box-shadow: 0 0 6px var(--led-red-glow);
+  }
+  /* ── MPR display in scoreboard footer ── */
+  .mpr-lbl { font-size: 0.7rem; color: var(--text-dim); }
+  /* ── Win overlay stats table ── */
+  .win-stats {
+    margin-top: 0.8rem;
+    width: 100%;
+    font-size: 0.78rem;
+    border-collapse: collapse;
+  }
+  .win-stats td {
+    padding: 0.2rem 0.5rem;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .win-stats .ws-name { font-size: 0.7rem; letter-spacing: 0.06em; }
+  .win-stats .ws-val  { color: var(--text-bright); font-size: 0.88rem; }
+  .win-stats .ws-avg  { color: var(--text-dim); font-size: 0.68rem; }
+</style>
+<script src="../sfx.js"></script>
+<script src="../utils.js"></script>
+<script src="../players.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     SETUP SCREEN
+══════════════════════════════════════ -->
+<div id="setup-screen" class="setup-wrap">
+
+  <div class="setup-top">
+    <a class="back-btn" href="../index.html">◂ HUB</a>
+    <div class="setup-title">CRICKET</div>
+  </div>
+
+  <!-- ── Player count: 1–4 only ── -->
+  <div class="s-section">
+    <span class="s-label">[ PLAYERS ]</span>
+    <div class="chip-row" id="player-chips">
+      <div class="chip" data-n="1">1</div>
+      <div class="chip on" data-n="2">2</div>
+      <div class="chip" data-n="3">3</div>
+      <div class="chip" data-n="4">4</div>
+    </div>
+  </div>
+
+  <!-- ── Player selection slots (dropdowns, built by players.js) ── -->
+  <div class="s-section">
+    <span class="s-label">[ SELECT PLAYERS ]</span>
+    <div id="player-slots"></div>
+  </div>
+
+  <!-- ── Number picker (unchanged) ── -->
+  <div class="s-section">
+    <span class="s-label">[ SELECT 7 NUMBERS ]</span>
+    <div class="num-count">Selected: <span id="sel-count">0</span> / 7</div>
+    <div class="num-grid" id="num-grid"></div>
+    <button class="btn-random" id="random-btn">[ RANDOM 7 ]</button>
+  </div>
+
+  <!-- ── Round limit (unchanged) ── -->
+  <div class="s-section">
+    <span class="s-label">[ ROUND LIMIT ]</span>
+    <div class="row2">
+      <input class="led-input-sm" type="number" id="max-rounds" value="0" min="0" max="99">
+      <span class="row2-hint">max rounds per player<br>0 = unlimited</span>
+    </div>
+  </div>
+
+  <!-- ── Game mode: 3-way toggle ── -->
+  <div class="s-section">
+    <span class="s-label">[ MODE ]</span>
+    <div class="mode-toggle" id="mode-toggle">
+      <div class="mode-chip" data-mode="regular">REGULAR</div>
+      <div class="mode-chip" data-mode="cutthroat">CUT-THROAT</div>
+      <div class="mode-chip on" data-mode="hit-only">HIT ONLY</div>
+    </div>
+  </div>
+
+  <button class="btn-start" id="start-btn">[ START GAME ]</button>
+  <button class="btn-resume" id="resume-btn" style="display:none">[ RESUME SAVED ]</button>
+
+</div>
+
+<!-- ══════════════════════════════════════
+     GAME SCREEN
+══════════════════════════════════════ -->
+<div id="game-screen" class="game-wrap" style="display:none">
+
+  <div class="top-bar">
+    <div style="display:flex;align-items:center">
+      <span class="game-logo">CRICKET</span>
+      <span class="r-badge" id="r-badge">R1</span>
+    </div>
+    <div class="top-btns">
+      <button class="theme-btn" id="theme-btn">☀</button>
+      <button class="top-btn" id="save-btn">SAVE</button>
+      <button class="top-btn danger" id="end-btn">END</button>
+    </div>
+  </div>
+
+  <div class="last-bar" id="last-bar">*** FINAL ROUND ***</div>
+
+  <div class="game-scroll">
+    <table class="score-table" id="score-table"></table>
+  </div>
+
+  <div class="input-panel">
+    <div class="turn-row">
+      <div>
+        <div class="turn-lbl">NOW THROWING</div>
+        <div class="turn-name" id="turn-name">---</div>
+      </div>
+      <div class="throw-slots">
+        <div class="tslot" id="ts0"></div>
+        <div class="tslot" id="ts1"></div>
+        <div class="tslot" id="ts2"></div>
+      </div>
+    </div>
+
+    <!-- TRIPLE button removed; tap a number 3× to mark triple -->
+    <!-- <div class="mult-row" id="mult-row">
+      <button class="mbtn active" data-m="1">SINGLE</button>
+      <button class="mbtn" data-m="2">DOUBLE</button>
+    </div> -->
+
+    <div class="tgt-grid" id="tgt-grid"></div>
+
+    <div class="act-row">
+      <button class="btn-undo" id="undo-btn">UNDO</button>
+      <button class="btn-next" id="next-btn">NEXT ››</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Shared win overlay -->
+<div id="win-overlay">
+  <div class="win-icon">🎯</div>
+  <div style="text-align:center">
+    <div class="win-lbl">WINNER</div>
+    <div class="win-name" id="win-name">---</div>
+  </div>
+  <div class="win-sub" id="win-sub"></div>
+  <div class="win-btns">
+    <button class="btn-start" id="win-new-btn" style="font-size:1rem;padding:0.8rem">NEW GAME</button>
+    <button class="btn-resume" onclick="document.getElementById('win-overlay').classList.remove('show')">VIEW BOARD</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script>
+'use strict';
+
+/* ── Init ── */
+initTheme();
+document.addEventListener('DOMContentLoaded', () => {
+  const tb = document.getElementById('theme-btn');
+  if (tb) tb.addEventListener('click', () => { toggleTheme(); SFX.hit(); });
+});
+
+const SAVE_KEY  = 'crick4';
+const ALL_NUMS  = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,'B'];
+
+let G    = {};
+let mult = 1;
+let selNums = new Set([15, 16, 17, 18, 19, 20, 'B']);
+let selN    = 2;
+
+// gameMode holds which of the 3 modes is active: 'regular', 'cutthroat', 'hit-only'
+let gameMode = 'hit-only';
+
+// Tap-to-triple state (turn-local, never persisted)
+let tapPending = null;
+let tapCount   = {};
+
+// ── Player slot state ──────────────────────────────────────────────────────────
+// slots[] holds the return value of buildPlayerSlot() for each player position.
+// Each slot has .getPid() and .getName() methods.
+let slots = [];
+
+// allSlotStates() returns the current { pid, name } selection for every slot.
+// This is passed to buildPlayerSlot so slots can exclude each other's selections.
+function allSlotStates() {
+  return slots.map(s => ({
+    pid:  s ? s.getPid()  : null,
+    name: s ? s.getName() : '',
+  }));
+}
+
+// rebuildSlotsPreservingSelections(n)
+// Renders n player-selection dropdowns into #player-slots.
+// Called on page load and whenever the player count chip changes
+// (changing the number of players is the one case where it's OK
+// to clear selections and start fresh).
+//
+// IMPORTANT: the 4th argument to buildPlayerSlot is an onChange callback
+// that fires every time a player is picked in THAT slot. We pass a no-op
+// here on purpose — see onSlotChange() below for why.
+function rebuildSlotsPreservingSelections() {
+  const n = selN;
+  slots = [];
+  const container = document.getElementById('player-slots');
+  container.innerHTML = '';
+
+  for (let i = 0; i < n; i++) {
+    const wrapper = document.createElement('div');
+    wrapper.style.marginBottom = '0.4rem';
+    container.appendChild(wrapper);
+
+    const slot = buildPlayerSlot(
+      wrapper,
+      i,
+      allSlotStates,
+      onSlotChange
+    );
+    slots.push(slot);
+  }
+}
+
+// onSlotChange()
+// Fires whenever ANY slot's selection changes (a player picked, Guest
+// picked, or a brand-new player saved & selected).
+//
+// We deliberately do NOT rebuild the slots here. Each slot keeps its own
+// selection in a local variable inside buildPlayerSlot — rebuilding would
+// throw that variable away and reset the slot back to "— SELECT PLAYER —"
+// the instant you chose someone (this was the bug: picking a player or
+// Guest never "stuck").
+//
+// Sibling exclusion (not letting the same player appear in two slots)
+// still works fine without a rebuild: every time a slot's OWN dropdown is
+// opened, it calls allSlotStates() fresh to see what siblings currently
+// have selected. So there's nothing else this function needs to do.
+function onSlotChange() {
+  // Intentionally empty — see comment above.
+}
+
+/* ══════════════════════════════════════
+   NUMBER PICKER (unchanged from original)
+══════════════════════════════════════ */
+function buildNumGrid() {
+  const grid = document.getElementById('num-grid');
+  grid.innerHTML = '';
+  ALL_NUMS.forEach(n => {
+    const d = document.createElement('div');
+    d.className = `num-chip${n === 'B' ? ' bull' : ''}${selNums.has(n) ? ' on' : ''}`;
+    d.textContent = n === 'B' ? 'B' : n;
+    d.addEventListener('click', () => toggleNum(n));
+    grid.appendChild(d);
+  });
+  document.getElementById('sel-count').textContent = selNums.size;
+}
+
+function toggleNum(n) {
+  if (selNums.has(n)) {
+    selNums.delete(n);
+  } else {
+    if (selNums.size >= 7) { toast('MAX 7 NUMBERS'); return; }
+    selNums.add(n);
+  }
+  buildNumGrid();
+}
+
+document.getElementById('random-btn').addEventListener('click', () => {
+  selNums.clear();
+  const pool = [...ALL_NUMS];
+  while (selNums.size < 7) {
+    const i = Math.floor(Math.random() * pool.length);
+    selNums.add(pool.splice(i, 1)[0]);
+  }
+  buildNumGrid();
+});
+
+/* ══════════════════════════════════════
+   SETUP — player count chips
+══════════════════════════════════════ */
+document.getElementById('player-chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  selN = +c.dataset.n;
+  document.querySelectorAll('#player-chips .chip').forEach(x =>
+    x.classList.toggle('on', x === c)
+  );
+  // Rebuild dropdowns for the new count (clears selections — see note above)
+  rebuildSlotsPreservingSelections();
+});
+
+/* ══════════════════════════════════════
+   SETUP — mode toggle (3-way)
+══════════════════════════════════════ */
+document.getElementById('mode-toggle').addEventListener('click', e => {
+  const chip = e.target.closest('.mode-chip'); if (!chip) return;
+  gameMode = chip.dataset.mode; // 'regular', 'cutthroat', or 'hit-only'
+  document.querySelectorAll('.mode-chip').forEach(c =>
+    c.classList.toggle('on', c === chip)
+  );
+});
+
+/* ══════════════════════════════════════
+   INITIAL BUILD
+══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  rebuildSlotsPreservingSelections();
+  buildNumGrid();
+  try {
+    if (localStorage.getItem(SAVE_KEY)) document.getElementById('resume-btn').style.display = '';
+  } catch(e) {}
+});
+
+/* ══════════════════════════════════════
+   START GAME
+══════════════════════════════════════ */
+document.getElementById('start-btn').addEventListener('click', () => {
+  if (selNums.size !== 7) { toast(`NEED 7 NUMBERS (${selNums.size}/7)`); return; }
+
+  // Validate that all player slots have a selection
+  const selections = allSlotStates();
+  for (let i = 0; i < selN; i++) {
+    if (!selections[i] || !selections[i].pid) {
+      toast(`SELECT PLAYER ${i + 1}`); return;
+    }
+  }
+
+  G = freshState();
+
+  // Store player names (for display) and pids (for stat logging)
+  G.players    = selections.slice(0, selN).map(s => s.name);
+  G.playerPids = selections.slice(0, selN).map(s => s.pid);
+
+  // Store which mode we're playing
+  G.regular    = gameMode === 'regular';
+  G.cutthroat  = gameMode === 'cutthroat';
+  G.hitOnly    = gameMode === 'hit-only';
+  G.variant    = gameMode; // 'regular', 'cutthroat', or 'hit-only'
+
+  G.maxRounds  = +document.getElementById('max-rounds').value;
+
+  const nums  = [...selNums].filter(n => n !== 'B').sort((a, b) => b - a);
+  G.targets   = selNums.has('B') ? [...nums, 'B'] : nums;
+
+  G.players.forEach(p => {
+    G.hits[p]   = {};
+    G.points[p] = 0;
+    G.marks[p]  = 0;    // NEW: total marks earned by this player
+    G.rounds[p] = 0;    // NEW: full rounds completed by this player
+    G.targets.forEach(t => G.hits[p][t] = 0);
+  });
+
+  launch();
+});
+
+document.getElementById('resume-btn').addEventListener('click', () => {
+  try { G = JSON.parse(localStorage.getItem(SAVE_KEY)); launch(); }
+  catch(e) { toast('LOAD ERROR'); }
+});
+
+function freshState() {
+  return {
+    players: [], playerPids: [], targets: [],
+    cutthroat: false, hitOnly: false, variant: 'regular',
+    maxRounds: 0,
+    hits: {}, points: {},
+    marks: {},   // { playerName: totalMarksInt }
+    rounds: {},  // { playerName: completedRoundsInt }
+    currentPlayer: 0, currentThrows: [], round: 1, history: []
+  };
+}
+
+/* ══════════════════════════════════════
+   LAUNCH (unchanged from original)
+══════════════════════════════════════ */
+function launch() {
+  mult       = 1;
+  tapPending = null;
+  tapCount   = {};
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display  = 'flex';
+  renderAll();
+}
+
+/* ══════════════════════════════════════
+   RENDER
+══════════════════════════════════════ */
+function renderAll() {
+  renderBoard();
+  renderTargets();
+  renderSlots();
+  if (tapPending !== null) renderPendingTap();
+  renderTurnName();
+  renderBadge();
+}
+
+function renderBoard() {
+  const cp = G.players[G.currentPlayer];
+
+  let h = '<thead><tr>'
+    + '<th style="background:var(--panel);border-right:1px solid var(--border);'
+    + 'position:sticky;top:0;z-index:6;min-width:34px"></th>';
+  G.players.forEach(p => {
+    h += `<th class="${p === cp ? 'ah' : ''}">${p}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+
+  G.targets.forEach(t => {
+    const bull      = t === 'B';
+    const allClosed = G.players.every(p => G.hits[p][t] >= 3);
+    h += `<tr><td class="tc${bull ? ' bull' : ''}${allClosed ? ' done' : ''}">${bull ? 'B' : t}</td>`;
+    G.players.forEach(p => {
+      const isActive     = p === cp;
+      const pendingExtra = (isActive && tapPending === t) ? (tapCount[t] || 0) : 0;
+      const displayHits  = G.hits[p][t] + pendingExtra;
+      h += `<td class="mc${isActive ? ' ac' : ' other'}"${
+        isActive ? ` onclick="tapCell('${p}','${t}')"` : ''
+      }>${dotsHtml(displayHits)}</td>`;
+    });
+    h += '</tr>';
+  });
+
+  h += '</tbody><tfoot>';
+
+  // PTS row — hidden in hit-only mode
+  if (!G.hitOnly) {
+    h += '<tr>'
+      + '<td class="pts-lbl" style="background:var(--panel);border-right:1px solid var(--border)">PTS</td>';
+    G.players.forEach(p => {
+      h += `<td${p === cp
+        ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
+        : ''}>${G.points[p] || 0}</td>`;
+    });
+    h += '</tr>';
+  }
+
+  // MPR row — always shown
+  h += '<tr>'
+    + '<td class="mpr-lbl" style="background:var(--panel);border-right:1px solid var(--border)">MPR</td>';
+  G.players.forEach(p => {
+    const marks  = G.marks[p]  || 0;
+    const rounds = G.rounds[p] || 0;
+    const mpr    = rounds > 0 ? (marks / rounds).toFixed(2) : '—';
+    h += `<td${p === cp
+      ? ' style="color:var(--led-red);text-shadow:0 0 8px var(--led-red-glow)"'
+      : ''}>${mpr}</td>`;
+  });
+  h += '</tr></tfoot>';
+
+  document.getElementById('score-table').innerHTML = h;
+}
+
+function dotsHtml(n) {
+  if (n === 0) return '<div class="dots"><span class="dot-empty">·</span></div>';
+  const filled = Math.min(n, 3), empty = 3 - filled;
+  let s = '';
+  for (let i = 0; i < filled; i++) s += '<span class="dot on"></span>';
+  for (let i = 0; i < empty;  i++) s += '<span class="dot off"></span>';
+  if (n > 3) s += `<span class="dot-plus">+${n - 3}</span>`;
+  return `<div class="dots">${s}</div>`;
+}
+
+function renderTargets() {
+  const g  = document.getElementById('tgt-grid');
+  g.innerHTML = '';
+  const cp = G.players[G.currentPlayer];
+
+  G.targets.forEach(t => {
+    const allClosed = G.players.every(p => G.hits[p][t] >= 3);
+    const cpClosed  = G.hits[cp][t] >= 3;
+    const bull      = t === 'B';
+    const b         = document.createElement('button');
+    b.dataset.target = t;
+    b.textContent    = bull ? 'BULL' : t;
+
+    if (allClosed) {
+      b.className = 'tbtn closed';
+      b.addEventListener('click', function() {
+        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
+        tapTarget(tgt, true);
+      });
+    } else if (cpClosed) {
+      b.className = 'tbtn scoring';
+      b.addEventListener('click', function() {
+        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
+        tapTarget(tgt, false);
+      });
+    } else {
+      b.className = bull ? 'tbtn bull' : 'tbtn';
+      b.addEventListener('click', function() {
+        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
+        tapTarget(tgt, false);
+      });
+    }
+
+    g.appendChild(b);
+  });
+
+  const miss = document.createElement('button');
+  miss.className   = 'tbtn miss-btn';
+  miss.textContent = 'MISS';
+  miss.addEventListener('click', () => {
+    pushHistoryse(JSON.stringify(G.rounds)),
     currentThrows: JSON.parse(JSON.stringify(G.currentThrows)),
     currentPlayer: G.currentPlayer,
     round:         G.round,
