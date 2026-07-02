@@ -146,6 +146,32 @@
   .win-stats .ws-name { font-size: 0.7rem; letter-spacing: 0.06em; }
   .win-stats .ws-val  { color: var(--text-bright); font-size: 0.88rem; }
   .win-stats .ws-avg  { color: var(--text-dim); font-size: 0.68rem; }
+
+  /* ── Bigger scoring grid (tgt-grid removed; scoring is tap-on-table now) ── */
+  .dots { height: 64px; gap: 7px; }
+  .dot { width: 20px; height: 20px; }
+  .dot-plus { width: 26px; height: 26px; font-size: 0.7rem; }
+  .dot-empty { font-size: 1.5rem; line-height: 64px; }
+  .tc { font-size: 1.3rem; padding: 0.6rem; }
+  .mc { padding: 0.45rem 0.2rem; }
+
+  /* ── Footer rows (PTS / MPR) +50% ── */
+  .score-table tfoot td { padding: 0.675rem 0.45rem; font-size: 1.5rem; }
+  .score-table tfoot td.pts-lbl { font-size: 0.78rem; }
+  .mpr-lbl { font-size: 1.05rem; }
+
+  /* ── UNDO / NEXT: ~3x taller, 1:2 ratio unchanged ── */
+  #undo-btn { min-height: 8.5rem; font-size: 1.1rem; }
+  #next-btn { min-height: 8.5rem; font-size: 1.4rem; }
+
+  /* ── MISS moved inline next to throw slots ── */
+  .throw-slots { align-items: center; }
+  .miss-inline {
+    width: auto; height: 34px;
+    padding: 0 0.6rem; margin-left: 0.4rem;
+    font-size: 0.82rem;
+    display: flex; align-items: center; justify-content: center;
+  }
 </style>
 <script src="../sfx.js"></script>
 <script src="../utils.js"></script>
@@ -245,6 +271,7 @@
         <div class="tslot" id="ts0"></div>
         <div class="tslot" id="ts1"></div>
         <div class="tslot" id="ts2"></div>
+        <button class="tbtn miss-btn miss-inline" id="miss-btn">MISS</button>
       </div>
     </div>
 
@@ -253,8 +280,6 @@
       <button class="mbtn active" data-m="1">SINGLE</button>
       <button class="mbtn" data-m="2">DOUBLE</button>
     </div> -->
-
-    <div class="tgt-grid" id="tgt-grid"></div>
 
     <div class="act-row">
       <button class="btn-undo" id="undo-btn">UNDO</button>
@@ -513,7 +538,6 @@ function launch() {
 ══════════════════════════════════════ */
 function renderAll() {
   renderBoard();
-  renderTargets();
   renderSlots();
   if (tapPending !== null) renderPendingTap();
   renderTurnName();
@@ -586,42 +610,6 @@ function dotsHtml(n) {
   return `<div class="dots">${s}</div>`;
 }
 
-function renderTargets() {
-  const g  = document.getElementById('tgt-grid');
-  g.innerHTML = '';
-  const cp = G.players[G.currentPlayer];
-
-  G.targets.forEach(t => {
-    const allClosed = G.players.every(p => G.hits[p][t] >= 3);
-    const cpClosed  = G.hits[cp][t] >= 3;
-    const bull      = t === 'B';
-    const b         = document.createElement('button');
-    b.dataset.target = t;
-    b.textContent    = bull ? 'BULL' : t;
-
-    if (allClosed) {
-      b.className = 'tbtn closed';
-      b.addEventListener('click', function() {
-        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
-        tapTarget(tgt, true);
-      });
-    } else if (cpClosed) {
-      b.className = 'tbtn scoring';
-      b.addEventListener('click', function() {
-        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
-        tapTarget(tgt, false);
-      });
-    } else {
-      b.className = bull ? 'tbtn bull' : 'tbtn';
-      b.addEventListener('click', function() {
-        const tgt = this.dataset.target === 'B' ? 'B' : +this.dataset.target;
-        tapTarget(tgt, false);
-      });
-    }
-
-    g.appendChild(b);
-  });
-
   const miss = document.createElement('button');
   miss.className   = 'tbtn miss-btn';
   miss.textContent = 'MISS';
@@ -658,12 +646,7 @@ function renderPendingTap() {
   const lbl = c > 1 ? `${c}×${tapPending}` : String(tapPending);
   sl.textContent = lbl;
   sl.className   = 'tslot pending';
-  document.querySelectorAll('#tgt-grid .tbtn').forEach(b => {
-    const t = b.dataset.target === 'B' ? 'B' : +b.dataset.target;
-    b.classList.toggle('tapping', t === tapPending);
-  });
 }
-
 function renderTurnName() {
   document.getElementById('turn-name').textContent = G.players[G.currentPlayer];
 }
@@ -968,6 +951,12 @@ function doWin(winnerName, winnerIdx, subText) {
 document.getElementById('next-btn').addEventListener('click', () => {
   SFX.next();
   nextPlayer();
+});
+
+document.getElementById('miss-btn').addEventListener('click', () => {
+  pushHistory();
+  commitPending(false);
+  doThrow(null, 0);
 });
 
 document.getElementById('undo-btn').addEventListener('click', () => {
