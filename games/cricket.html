@@ -621,6 +621,24 @@ function computeRowHeight() {
   rowH = Math.max(CRICKET_ROW_H_MIN, Math.min(CRICKET_ROW_H_MAX, rowH));
 
   document.documentElement.style.setProperty('--cricket-row-h', rowH + 'px');
+
+  // ── TEMP DEBUG — tells us what's really happening, remove after ──
+  const tcEl = document.querySelector('#score-table tbody .tc');
+  let dbg = document.getElementById('rowdbg');
+  if (!dbg) {
+    dbg = document.createElement('div');
+    dbg.id = 'rowdbg';
+    dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#000;color:#0f0;font:10px monospace;padding:4px;white-space:pre-wrap;';
+    document.body.appendChild(dbg);
+  }
+  dbg.textContent =
+    'scrollClientH=' + scrollEl.clientHeight +
+    ' theadH=' + theadEl.offsetHeight +
+    ' available=' + available +
+    ' targets=' + G.targets.length +
+    ' rowH(calc)=' + rowH +
+    ' tcRenderedH=' + (tcEl ? tcEl.getBoundingClientRect().height.toFixed(1) : 'n/a') +
+    ' rowVarNow=' + getComputedStyle(document.documentElement).getPropertyValue('--cricket-row-h');
 }
 
 let rowHeightResizeTimer = null;
