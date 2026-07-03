@@ -609,7 +609,7 @@ function renderAll() {
 // the score table and the stats bar. Clamped between a usability floor and a
 // sane ceiling so rows never get too small to tap or absurdly tall with few
 // targets. Recomputed on resize/orientationchange (see listeners below).
-const CRICKET_ROW_H_MIN = 26; // px — always comfortably tappable
+const CRICKET_ROW_H_MIN = 36; // px — always comfortably tappable
 const CRICKET_ROW_H_MAX = 78; // px — cap so few targets don't stretch huge
 function computeRowHeight() {
   const scrollEl = document.querySelector('.game-scroll');
