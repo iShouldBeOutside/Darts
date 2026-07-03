@@ -122,6 +122,19 @@
     letter-spacing: 0.05em;
     margin-top: 0.15rem;
   }
+
+  /* .chip is a fixed 50x50 square in common.css, sized for a single digit
+     (player count / variant chips). IN/OUT chips hold full words
+     (SINGLE/DOUBLE/MASTER), which were overlapping inside that fixed
+     square — so widen just these two chip-rows to auto-size instead. */
+  #in-chips .chip,
+  #out-chips .chip {
+    width: auto;
+    height: auto;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+  }
 </style>
 
 <script src="../sfx.js"></script>
@@ -296,6 +309,18 @@ function escapeHtml(str) {
 ══════════════════════════════════════ */
 let G    = {};
 let mult = 1;
+
+// setMult(v) — the single place that changes the active multiplier AND
+// keeps the SINGLE/DOUBLE/TRIPLE button highlight in sync with it. Using
+// this everywhere (instead of setting the `mult` variable directly)
+// guarantees the highlighted button always matches what will actually
+// score on the next dart.
+function setMult(v) {
+  mult = v;
+  document.querySelectorAll('#mult-row .mbtn').forEach(x =>
+    x.classList.toggle('active', +x.dataset.m === v)
+  );
+}
 
 let selN     = 2;
 let selScore = 501;
@@ -497,7 +522,7 @@ function freshState() {
    LAUNCH
 ══════════════════════════════════════ */
 function launch() {
-  mult = 1;
+  setMult(1);
   document.getElementById('game-logo').textContent = G.startScore;
   buildTargetGrid();
   document.getElementById('setup-screen').style.display = 'none';
@@ -687,7 +712,6 @@ function doThrow(val, m) {
   if (val === null || m === 0) {
     SFX.miss();
     G.currentThrows.push(null);
-    mult = 1;
     renderAll();
     return;
   }
@@ -707,7 +731,6 @@ function doThrow(val, m) {
       // dart's still used up.
       SFX.hit();
       G.currentThrows.push({ val, mult: m, bust: false, noScore: true });
-      mult = 1;
       renderAll();
       return;
     }
@@ -726,7 +749,6 @@ function doThrow(val, m) {
     G.currentThrows.push({ val, mult: m, bust: true });
     G.scores[cp] = G.turnStartScore;            // void the WHOLE turn
     if (G.openedThisTurn) G.hasOpened[cp] = false; // undo the open too, if it happened this turn
-    mult = 1;
     renderAll();
     setTimeout(() => nextPlayer(true), 900);
   }
@@ -748,7 +770,6 @@ function doThrow(val, m) {
     G.currentThrows.push({ val, mult: m, bust: false });
     if (!G.history[cp]) G.history[cp] = [];
     G.history[cp].push({ total: rawPoints, bust: false });
-    mult = 1;
     renderAll();
     setTimeout(() => {
       finishGame(cp, G.currentPlayer, `CHECKOUT  ${cur} → 0`, true);
@@ -763,7 +784,6 @@ function doThrow(val, m) {
 
   G.scores[cp] = newScore;
   G.currentThrows.push({ val, mult: m, bust: false });
-  mult = 1;
   renderAll();
 }
 
@@ -780,6 +800,17 @@ function nextPlayer(fromBust) {
 
   const cp = G.players[G.currentPlayer];
   if (!G.history[cp]) G.history[cp] = [];
+
+  // Standard darts convention: a turn that ENDS (normally or via bust) is
+  // assumed to have used all 3 darts for PPD purposes, even if fewer
+  // dart-taps were actually entered — real players still throw their full
+  // hand unless they check out early. Checkout turns are NOT padded here;
+  // they finish through finishGame() instead of nextPlayer(), so they
+  // keep counting only the darts actually thrown up to the checkout dart.
+  const dartsThisTurn = G.currentThrows.length;
+  if (dartsThisTurn < 3) {
+    G.dartsThrown[cp] = (G.dartsThrown[cp] || 0) + (3 - dartsThisTurn);
+  }
 
   if (fromBust) {
     G.history[cp].push({ total: 0, bust: true });
@@ -804,7 +835,7 @@ function nextPlayer(fromBust) {
     G.round++;
     if (G.maxRounds > 0 && G.round > G.maxRounds) { endByLimit(); return; }
   }
-  mult = 1;
+  setMult(1);
   renderAll();
   save();
 }
@@ -933,18 +964,14 @@ document.getElementById('undo-btn').addEventListener('click', () => {
   G.round          = s.round;
   G.turnStartScore = s.turnStartScore;
   G.openedThisTurn = s.openedThisTurn;
-  mult = 1;
+  // Multiplier selection is intentionally left alone here — UNDO only
+  // reverts the dart/state, not whatever SINGLE/DOUBLE/TRIPLE is picked.
   renderAll();
   toast('UNDONE');
 });
 
 document.querySelectorAll('#mult-row .mbtn').forEach(b => {
-  b.addEventListener('click', () => {
-    mult = +b.dataset.m;
-    document.querySelectorAll('#mult-row .mbtn').forEach(x =>
-      x.classList.toggle('active', x === b)
-    );
-  });
+  b.addEventListener('click', () => setMult(+b.dataset.m));
 });
 
 document.getElementById('save-btn').addEventListener('click', () => { save(); toast('SAVED'); });
