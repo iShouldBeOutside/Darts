@@ -614,31 +614,22 @@ const CRICKET_ROW_H_MAX = 78; // px — cap so few targets don't stretch huge
 function computeRowHeight() {
   const scrollEl = document.querySelector('.game-scroll');
   const theadEl  = document.querySelector('#score-table thead');
-  if (!scrollEl || !theadEl || !G.targets || !G.targets.length) return;
+  const mcEl     = document.querySelector('#score-table tbody .mc');
+  if (!scrollEl || !theadEl || !mcEl || !G.targets || !G.targets.length) return;
+
+  // A row's real rendered height = the dots box + .mc's own padding/border,
+  // which sit outside the dots box. Measure that overhead live so the row
+  // height we set is the row height we actually get.
+  const mcStyle = getComputedStyle(mcEl);
+  const overhead = parseFloat(mcStyle.paddingTop) + parseFloat(mcStyle.paddingBottom)
+                 + parseFloat(mcStyle.borderBottomWidth);
 
   const available = scrollEl.clientHeight - theadEl.offsetHeight;
-  let rowH = Math.floor(available / G.targets.length);
-  rowH = Math.max(CRICKET_ROW_H_MIN, Math.min(CRICKET_ROW_H_MAX, rowH));
+  const totalRowH = Math.floor(available / G.targets.length);
+  let dotsH = totalRowH - overhead;
+  dotsH = Math.max(CRICKET_ROW_H_MIN, Math.min(CRICKET_ROW_H_MAX, dotsH));
 
-  document.documentElement.style.setProperty('--cricket-row-h', rowH + 'px');
-
-  // ── TEMP DEBUG — tells us what's really happening, remove after ──
-  const tcEl = document.querySelector('#score-table tbody .tc');
-  let dbg = document.getElementById('rowdbg');
-  if (!dbg) {
-    dbg = document.createElement('div');
-    dbg.id = 'rowdbg';
-    dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#000;color:#0f0;font:10px monospace;padding:4px;white-space:pre-wrap;';
-    document.body.appendChild(dbg);
-  }
-  dbg.textContent =
-    'scrollClientH=' + scrollEl.clientHeight +
-    ' theadH=' + theadEl.offsetHeight +
-    ' available=' + available +
-    ' targets=' + G.targets.length +
-    ' rowH(calc)=' + rowH +
-    ' tcRenderedH=' + (tcEl ? tcEl.getBoundingClientRect().height.toFixed(1) : 'n/a') +
-    ' rowVarNow=' + getComputedStyle(document.documentElement).getPropertyValue('--cricket-row-h');
+  document.documentElement.style.setProperty('--cricket-row-h', dotsH + 'px');
 }
 
 let rowHeightResizeTimer = null;
