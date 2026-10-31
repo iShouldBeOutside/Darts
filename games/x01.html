@@ -123,6 +123,19 @@
     margin-top: 0.15rem;
   }
 
+  /* ── Compact single-row turn bar (tweak 2026-10-31) ────────────────
+     Name + icon-only mode buttons + throw boxes share ONE row, so the
+     mode selector costs no extra vertical space. Long names truncate
+     with an ellipsis (the full name is still on the scoreboard above),
+     mode buttons never shrink, and throw boxes are 40px (not 46px) so
+     the whole row fits a 412px Pixel 6 screen. ── */
+  .turn-row { gap: 0.4rem; }
+  .turn-name-wrap { min-width: 0; flex: 1 1 auto; }
+  .turn-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .score-mode-row { flex-shrink: 0; }
+  .throw-slots { flex-shrink: 0; }
+  .throw-slots .tslot { width: 40px; height: 32px; }
+
   /* .chip is a fixed 50x50 square in common.css, sized for a single digit
      (player count / variant chips). IN/OUT chips hold full words
      (SINGLE/DOUBLE/MASTER), which were overlapping inside that fixed
@@ -139,6 +152,7 @@
 
 <script src="../sfx.js"></script>
 <script src="../utils.js"></script>
+<script src="../dartlogic.js"></script>
 <script src="../players.js"></script>
 </head>
 <body>
@@ -225,6 +239,7 @@
       <span class="r-badge" id="r-badge">R1</span>
     </div>
     <div class="top-btns">
+      <button class="theme-btn sound-btn" id="sound-btn">🔔</button>
       <button class="theme-btn" id="theme-btn">☀</button>
       <button class="top-btn" id="save-btn">SAVE</button>
       <button class="top-btn danger" id="end-btn">END</button>
@@ -238,16 +253,45 @@
   </div>
 
   <div class="input-panel amber-panel">
+    <!-- Single-row turn bar: name | icon-only mode buttons | boxes.
+         Mode buttons sit BETWEEN the name and the boxes, in the same
+         row, and are icon-only now (no text labels — see title /
+         aria-label for what each one is). Round = 🎯🎯🎯, single dart
+         = 🎯, classic = ▦ (a grid of small squares, for the
+         button-grid picker below). The choice is remembered per device
+         (localStorage darts-x01-scoring), so the next time x01 opens
+         it defaults to the last method used. -->
     <div class="turn-row">
-      <div>
+      <div class="turn-name-wrap">
         <div class="turn-lbl">NOW THROWING</div>
         <div class="turn-name" id="turn-name">---</div>
       </div>
-      <div class="throw-slots">
+      <div class="score-mode-row" id="score-mode-row">
+        <button class="score-mode-btn" data-mode="round" title="Round scoring" aria-label="Round scoring">🎯🎯🎯</button>
+        <button class="score-mode-btn" data-mode="single" title="Single dart scoring" aria-label="Single dart scoring">🎯</button>
+        <button class="score-mode-btn" data-mode="classic" title="Classic S/D/T scoring" aria-label="Classic S/D/T scoring">▦</button>
+      </div>
+      <div class="throw-slots" id="throw-slots-wrap">
         <div class="tslot" id="ts0"></div>
         <div class="tslot" id="ts1"></div>
         <div class="tslot" id="ts2"></div>
       </div>
+    </div>
+
+    <!-- Best finish for the current player. In single/classic it
+         updates after every dart; in round mode it shows the finish
+         for the visit about to be thrown (3 darts, current score —
+         it cannot update mid-visit because no darts are entered
+         individually). See renderCheckout(). -->
+    <div class="checkout-line" id="checkout-line"></div>
+
+    <!-- Keypad + presets: round and single modes only. Classic keeps
+         the multiplier row + target grid below, unchanged. -->
+    <div id="keypad-area" style="display:none">
+      <div class="preset-lbl" id="preset-lbl">COMMON SCORES — TAP TO USE</div>
+      <div class="preset-row" id="preset-row"></div>
+      <div class="keypad" id="keypad" style="margin-top:0.5rem"></div>
+      <div class="row2-hint" id="keypad-hint" style="margin-top:0.4rem"></div>
     </div>
 
     <div class="mult-row" id="mult-row">
@@ -280,6 +324,29 @@
   </div>
 </div>
 
+<!-- Impossible-score popup: any tap anywhere on it closes it and
+     leaves the typed entry on screen for the player to delete. -->
+<div class="invalid-overlay" id="invalid-overlay">
+  <div class="invalid-panel">
+    <div class="inv-title">NOT POSSIBLE</div>
+    <div class="inv-body" id="invalid-body"></div>
+    <div class="inv-body" style="margin-top:0.8rem">TAP ANYWHERE TO CLOSE AND FIX IT.</div>
+  </div>
+</div>
+<!-- Yes/No confirm, used only where a numeric entry cannot prove the
+     dart: opening a double/master-in visit, or finishing a
+     double/master-out visit, from a round total. -->
+<div class="invalid-overlay" id="confirm-overlay">
+  <div class="invalid-panel">
+    <div class="inv-title" id="confirm-title"></div>
+    <div class="inv-body" id="confirm-body"></div>
+    <div style="display:flex;gap:0.5rem;margin-top:1rem">
+      <button class="btn-undo" id="confirm-no" style="flex:1">NO</button>
+      <button class="btn-next amber" id="confirm-yes" style="flex:1">YES</button>
+    </div>
+  </div>
+</div>
+
 <div class="bust-flash" id="bust-flash"></div>
 <div id="toast"></div>
 <script>
@@ -309,6 +376,17 @@ function escapeHtml(str) {
 ══════════════════════════════════════ */
 let G    = {};
 let mult = 1;
+// Scoring method + keypad entry. Mode is persisted per device in
+// localStorage ('darts-x01-scoring'); entry is deliberately NOT in G,
+// so a saved/resumed game never resumes mid-typing.
+let scoringMode = 'round';
+let keypadEntry = '';
+function storedScoringMode() {
+  try {
+    const m = localStorage.getItem('darts-x01-scoring');
+    return (m === 'round' || m === 'single' || m === 'classic') ? m : 'round';
+  } catch (e) { return 'round'; }
+}
 
 // setMult(v) — the single place that changes the active multiplier AND
 // keeps the SINGLE/DOUBLE/TRIPLE button highlight in sync with it. Using
@@ -320,6 +398,13 @@ function setMult(v) {
   document.querySelectorAll('#mult-row .mbtn').forEach(x =>
     x.classList.toggle('active', +x.dataset.m === v)
   );
+  // No triple bull: a bull is 25 (single) or 50 (double) only.
+  const bull = document.getElementById('bull-btn');
+  if (bull) {
+    bull.disabled = (v === 3);
+    bull.style.opacity = (v === 3) ? '0.3' : '';
+    bull.style.pointerEvents = (v === 3) ? 'none' : '';
+  }
 }
 
 let selN     = 2;
@@ -525,6 +610,8 @@ function launch() {
   setMult(1);
   document.getElementById('game-logo').textContent = G.startScore;
   buildTargetGrid();
+  buildKeypad();
+  applyScoringMode(storedScoringMode());
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('game-screen').style.display  = 'flex';
   renderAll();
@@ -542,6 +629,7 @@ function buildTargetGrid() {
     g.appendChild(b);
   }
   const bull = document.createElement('button');
+  bull.id        = 'bull-btn';
   bull.className   = 'tbtn x01 bull';
   bull.textContent = 'BULL';
   bull.addEventListener('click', () => doThrow(25, mult));
@@ -562,6 +650,9 @@ function renderAll() {
   renderSlots();
   renderTurnName();
   renderBadge();
+  renderModeUI();
+  renderCheckout();
+  renderPresets();
 }
 
 function renderBoard() {
@@ -607,26 +698,189 @@ function renderBoard() {
 }
 
 function renderSlots() {
+  const wrap = document.getElementById('throw-slots-wrap');
+  // Round mode: ONE box, showing what is being typed. The other two
+  // boxes are hidden, not just empty, so the panel stays compact.
+  if (scoringMode === 'round') {
+    const sl = document.getElementById('ts0');
+    sl.textContent = keypadEntry;
+    sl.className = keypadEntry ? 'tslot pending' : 'tslot';
+    document.getElementById('ts1').style.display = 'none';
+    document.getElementById('ts2').style.display = 'none';
+    if (wrap) wrap.style.display = 'flex';
+    return;
+  }
+  document.getElementById('ts1').style.display = '';
+  document.getElementById('ts2').style.display = '';
   for (let i = 0; i < 3; i++) {
     const sl = document.getElementById(`ts${i}`);
     const th = G.currentThrows[i];
     if (th === undefined) {
-      sl.textContent = ''; sl.className = 'tslot';
+      // Single mode: a typed-but-not-yet-added value previews here.
+      if (scoringMode === 'single' && i === G.currentThrows.length && keypadEntry !== '') {
+        sl.textContent = keypadEntry; sl.className = 'tslot pending';
+      } else {
+        sl.textContent = ''; sl.className = 'tslot';
+      }
     } else if (th === null) {
       sl.textContent = 'MISS'; sl.className = 'tslot miss';
     } else if (th.bust) {
       sl.textContent = 'BUST'; sl.className = 'tslot bust';
+    } else if (th.numeric) {
+      // Numeric entry: show the POINTS, not a guessed dart (20 could
+      // be S20 or D10 — the app must not pretend it knows which).
+      sl.textContent = String(th.points);
+      sl.className = th.noScore ? 'tslot miss' : 'tslot single-val';
     } else {
       const lbl = th.mult > 1
         ? `${th.mult}×${th.val === 25 ? 'B' : th.val}`
         : (th.val === 25 ? 'BULL' : String(th.val));
       sl.textContent = lbl;
-      // noScore = hit something before opening the innings (double/master-in
-      // not yet satisfied) — styled like a miss since it didn't count.
       sl.className = th.noScore ? 'tslot miss' : 'tslot hit';
     }
   }
 }
+
+// renderModeUI() — show the right input for the current method.
+function renderModeUI() {
+  document.querySelectorAll('#score-mode-row .score-mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === scoringMode));
+  const classic = scoringMode === 'classic';
+  document.getElementById('mult-row').style.display = classic ? '' : 'none';
+  document.getElementById('tgt-grid').style.display = classic ? '' : 'none';
+  document.getElementById('keypad-area').style.display = classic ? 'none' : '';
+  document.getElementById('keypad-hint').textContent =
+    scoringMode === 'round'
+      ? 'TYPE THE WHOLE VISIT (0–180), THEN THE BIG NEXT BUTTON TO LOCK IT.'
+      : 'TYPE ONE DART, THEN NEXT TO LOCK IT. NEXT WITH NOTHING TYPED = 0. PRESETS ADD INSTANTLY; PRESS NEXT AFTER THE 3RD DART TO CHANGE PLAYER.';
+}
+
+function applyScoringMode(m) {
+  scoringMode = m;
+  keypadEntry = '';
+  try { localStorage.setItem('darts-x01-scoring', m); } catch (e) {}
+  buildKeypad();
+  renderAll();
+  save();
+}
+
+// renderCheckout() — best finish for the current player, live.
+// Only in single/classic mode: those are the modes where darts are
+// entered one at a time, so remaining + darts-left are known after
+// every dart (e.g. 120 with 3 darts → T20 - 20 - D20; after a 20, with
+// 100 left and 2 darts → T20 - D20). Not shown before opening under
+// double/master-in (the board already says NEED … IN), nor after the
+// 3rd dart (the turn is over — press NEXT).
+function renderCheckout() {
+  const el = document.getElementById('checkout-line');
+  if (!el) return;
+  const cp = G.players[G.currentPlayer];
+  if (!cp || (G.inMode !== 'single' && !G.hasOpened[cp])) { el.innerHTML = ''; return; }
+  // Round mode: no darts are entered one at a time, so the finish is
+  // for the visit as a whole (3 darts, current score). It does not
+  // change while typing — it changes when the visit is locked and
+  // the next player (or the same player, next visit) is up.
+  const dartsLeft = scoringMode === 'round' ? 3 : 3 - G.currentThrows.length;
+  if (dartsLeft <= 0) { el.innerHTML = ''; return; }
+  const r = DartLogic.checkoutRoute(G.scores[cp], dartsLeft, G.outMode);
+  if (r.type === 'checkout') el.textContent = 'OUT: ' + r.labels.join(' - ');
+  else if (r.type === 'leave') el.innerHTML =
+    'NO OUT · LEAVE ' + r.leave +
+    '<span class="co-leave">' + r.labels.join(' - ') + ' → then ' + r.leaveRoute.join(' - ') + '</span>';
+  else el.textContent = 'NO FINISH';
+}
+
+// renderPresets() — most-thrown scores for the CURRENT player, from
+// DartLogic history (keyed by pid). Both modes show 8 presets in a
+// 4-across × 2-row grid that spans the panel width; new players get
+// the generic fallbacks instead.
+function renderPresets() {
+  const row = document.getElementById('preset-row');
+  if (!row || scoringMode === 'classic') return;
+  const pid = G.playerPids ? G.playerPids[G.currentPlayer] : null;
+  const vals = scoringMode === 'round'
+    ? DartLogic.topRounds(pid, 8)
+    : DartLogic.topDarts(pid, 8);
+  row.innerHTML = '';
+  vals.forEach(v => {
+    const b = document.createElement('button');
+    b.className = 'preset-btn';
+    b.textContent = v;
+    b.addEventListener('click', () => {
+      if (scoringMode === 'round') { keypadEntry = String(v); renderSlots(); }
+      else addNumericDart(v);
+    });
+    row.appendChild(b);
+  });
+}
+
+function buildKeypad() {
+  const kp = document.getElementById('keypad');
+  if (!kp) return;
+  kp.innerHTML = '';
+  const addBtn = (label, cls, fn, span) => {
+    const b = document.createElement('button');
+    b.className = 'key-btn' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    if (span) b.style.gridColumn = `span ${span}`;
+    b.addEventListener('click', fn);
+    kp.appendChild(b);
+  };
+  for (let d = 1; d <= 9; d++) addBtn(String(d), '', () => {
+    const maxLen = scoringMode === 'round' ? 3 : 2;
+    if (keypadEntry.length < maxLen) { keypadEntry += String(d); renderSlots(); }
+  });
+  addBtn('⌫', 'action', () => { keypadEntry = keypadEntry.slice(0, -1); renderSlots(); });
+  if (scoringMode === 'round') {
+    // No NEXT key on the keypad any more — the big NEXT button below
+    // locks the visit. 0 spans two columns so the last row is full.
+    addBtn('0', '', () => {
+      if (keypadEntry.length < 3) { keypadEntry += '0'; renderSlots(); }
+    }, 2);
+  } else {
+    // No ADD key any more — the big NEXT button locks the dart (see
+    // submitSingleViaNext). MISS locks a miss immediately, as before.
+    addBtn('0', '', () => {
+      if (keypadEntry.length < 2) { keypadEntry += '0'; renderSlots(); }
+    });
+    addBtn('MISS', 'action', () => addNumericDart(0, true));
+  }
+}
+
+// showInvalid() — impossible-score popup. It never clears the entry:
+// closing it (any tap on the overlay) returns to the keypad with the
+// typed value still on screen, ready for ⌫.
+function showInvalid(value, kind) {
+  const body = document.getElementById('invalid-body');
+  body.textContent = kind === 'round'
+    ? `${value} IS NOT POSSIBLE WITH 3 DARTS (MAX 180). DELETE IT AND TRY AGAIN.`
+    : `${value} IS NOT POSSIBLE WITH ONE DART. DELETE IT AND TRY AGAIN.`;
+  document.getElementById('invalid-overlay').classList.add('show');
+}
+document.getElementById('invalid-overlay').addEventListener('click', () => {
+  document.getElementById('invalid-overlay').classList.remove('show');
+  renderSlots();
+});
+
+// showConfirm() — Yes/No modal for the two cases a number cannot prove.
+// onYes / onNo run once; tapping the scrim counts as NO (safe default).
+let confirmCb = null;
+function showConfirm(title, body, onYes, onNo) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-body').textContent = body;
+  confirmCb = { onYes, onNo };
+  document.getElementById('confirm-overlay').classList.add('show');
+}
+function closeConfirm(which) {
+  document.getElementById('confirm-overlay').classList.remove('show');
+  const cb = confirmCb; confirmCb = null;
+  if (cb) (which === 'yes' ? cb.onYes : cb.onNo)();
+}
+document.getElementById('confirm-yes').addEventListener('click', () => closeConfirm('yes'));
+document.getElementById('confirm-no').addEventListener('click', () => closeConfirm('no'));
+document.getElementById('confirm-overlay').addEventListener('click', e => {
+  if (e.target.id === 'confirm-overlay') closeConfirm('no');
+});
 
 function renderTurnName() {
   document.getElementById('turn-name').textContent = G.players[G.currentPlayer];
@@ -699,6 +953,7 @@ function pushHistory() {
    score on a bust handles it automatically.
 ══════════════════════════════════════ */
 function doThrow(val, m) {
+  if (val === 25 && m === 3) { toast('NO TRIPLE BULL'); return; }
   if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
 
   pushHistory(); // snapshot BEFORE this dart changes anything
@@ -788,6 +1043,178 @@ function doThrow(val, m) {
 }
 
 /* ══════════════════════════════════════
+   NUMERIC DART (single mode) + ROUND SUBMIT (round mode)
+   ──────────────────────────────────────────────────────────────
+   ASSUMPTION, stated plainly because a bare number cannot prove
+   which dart was thrown: a value counts as a double if it CAN be a
+   double (even, ≤40, or 50) and as a triple if it CAN be a triple.
+   So entering 40 to finish double-out wins (D20), and entering 20
+   to open double-in opens. The alternative — a prompt on every
+   ambiguous dart — would interrupt every checkout; UNDO is there
+   if the app credits a dart the player did not actually throw.
+   Round mode cannot use even that shortcut for a finish (the last
+   dart of the visit is unknown), so it asks once, at the finish,
+   with the Yes/No modal above — and likewise asks once about
+   opening a double/master-in visit.
+══════════════════════════════════════ */
+function addNumericDart(value, isMiss) {
+  if (G.currentThrows.length >= 3) { toast('END TURN FIRST'); return; }
+  if (!DartLogic.isPossibleSingle(value)) { showInvalid(value, 'single'); return; }
+  pushHistory();
+  const cp = G.players[G.currentPlayer];
+  G.dartsThrown[cp] = (G.dartsThrown[cp] || 0) + 1;
+  keypadEntry = '';
+  if (isMiss || value === 0) {
+    SFX.miss();
+    G.currentThrows.push(null);
+    renderAll();
+    return;
+  }
+  const canD = DartLogic.canBeDouble(value), canT = DartLogic.canBeTriple(value);
+  if (!G.hasOpened[cp]) {
+    const qualifies = (G.inMode === 'double' && canD) ||
+      (G.inMode === 'master' && (canD || canT));
+    if (!qualifies) {
+      SFX.hit();
+      G.currentThrows.push({ points: value, numeric: true, bust: false, noScore: true });
+      renderAll(); return;
+    }
+    G.hasOpened[cp] = true; G.openedThisTurn = true;
+  }
+  const cur = G.scores[cp], newScore = cur - value;
+  function handleBust() {
+    SFX.bust(); bustFlash();
+    G.currentThrows.push({ points: value, numeric: true, bust: true });
+    G.scores[cp] = G.turnStartScore;
+    if (G.openedThisTurn) G.hasOpened[cp] = false;
+    renderAll();
+    setTimeout(() => nextPlayer(true), 900);
+  }
+  if (newScore < 0) { handleBust(); return; }
+  if (newScore === 1 && G.outMode !== 'single') { handleBust(); return; }
+  if (newScore === 0) {
+    const validFinish = G.outMode === 'single' ||
+      (G.outMode === 'double' && canD) || (G.outMode === 'master' && (canD || canT));
+    if (!validFinish) { handleBust(); return; }
+    SFX.checkout(); G.scores[cp] = 0;
+    G.currentThrows.push({ points: value, numeric: true, bust: false });
+    if (!G.history[cp]) G.history[cp] = [];
+    G.history[cp].push({ total: value, bust: false });
+    renderAll();
+    setTimeout(() => finishGame(cp, G.currentPlayer, `CHECKOUT  ${cur} → 0`, true), 300);
+    return;
+  }
+  SFX.hit(); G.scores[cp] = newScore;
+  G.currentThrows.push({ points: value, numeric: true, bust: false });
+  renderAll();
+}
+
+// submitSingleViaNext() — the big NEXT button in single mode.
+// NEXT locks the typed dart and moves to the next dart slot. NEXT
+// with nothing typed locks a 0 (a miss). NEXT on the 3rd dart locks
+// that dart and then changes player, exactly like NEXT after the 3rd
+// dart in classic mode. If the 3rd dart already came from a preset
+// (or MISS), NEXT with 3 darts simply changes player.
+function submitSingleViaNext() {
+  // Guard: after a bust or a checkout the turn is already ending
+  // (auto-advance / finish is scheduled) — NEXT must not lock another
+  // dart into that dead turn while the 900ms/300ms timer is running.
+  const cp0 = G.players[G.currentPlayer];
+  if (G.scores[cp0] === 0) return;
+  const last0 = G.currentThrows[G.currentThrows.length - 1];
+  if (last0 && last0.bust) return;
+  if (G.currentThrows.length >= 3) { keypadEntry = ''; nextPlayer(false); return; }
+  const value = keypadEntry === '' ? 0 : +keypadEntry;
+  if (!DartLogic.isPossibleSingle(value)) { showInvalid(value, 'single'); return; }
+  addNumericDart(value, value === 0);
+  // Bust and checkout schedule their own advancement/finish inside
+  // addNumericDart — do not advance a second time here.
+  const last = G.currentThrows[G.currentThrows.length - 1];
+  if (last && last.bust) return;
+  if (G.scores[G.players[G.currentPlayer]] === 0) return; // checkout in progress
+  if (G.currentThrows.length >= 3) { nextPlayer(false); return; }
+  renderAll();
+}
+
+function submitRound() {
+  if (keypadEntry === '') { toast('TYPE A SCORE OR 0'); return; }
+  const total = +keypadEntry;
+  if (total > 180 || !DartLogic.isPossibleRound(total)) { showInvalid(total, 'round'); return; }
+  const cp = G.players[G.currentPlayer], cur = G.scores[cp], newScore = cur - total;
+  // Bust first: it voids the visit regardless of opening/finishing.
+  if (newScore < 0 || (newScore === 1 && G.outMode !== 'single')) { applyRoundBust(); return; }
+  if (!G.hasOpened[cp] && G.inMode !== 'single') {
+    showConfirm('OPENING?', `DID A DART IN THIS VISIT QUALIFY FOR ${G.inMode.toUpperCase()}-IN? YES COUNTS THE WHOLE VISIT, NO SCORES 0 FOR THIS VISIT.`,
+      () => { G.hasOpened[cp] = true; G.openedThisTurn = true; applyRound(total); },
+      () => applyRound(0));
+    return;
+  }
+  if (newScore === 0 && G.outMode !== 'single') {
+    showConfirm('FINISH?', `DID YOUR LAST DART QUALIFY FOR ${G.outMode.toUpperCase()}-OUT? YES WINS, NO IS A BUST.`,
+      () => applyRoundCheckout(total),
+      () => applyRoundBust());
+    return;
+  }
+  if (newScore === 0) { applyRoundCheckout(total); return; }
+  applyRound(total);
+}
+// applyRound(): a whole visit at once. Counts as 3 darts for PPD
+// (the app cannot know how many were actually thrown to reach the
+// total, and the classic turn is padded to 3 the same way).
+function applyRound(total) {
+  pushHistory();
+  const cp = G.players[G.currentPlayer];
+  G.dartsThrown[cp] = (G.dartsThrown[cp] || 0) + 3;
+  G.scores[cp] = G.scores[cp] - total;
+  keypadEntry = '';
+  advanceRoundTurn(total, false);
+}
+function applyRoundCheckout(total) {
+  pushHistory();
+  const cp = G.players[G.currentPlayer];
+  G.dartsThrown[cp] = (G.dartsThrown[cp] || 0) + 3;
+  G.scores[cp] = 0;
+  if (!G.history[cp]) G.history[cp] = [];
+  G.history[cp].push({ total, bust: false });
+  keypadEntry = '';
+  const cur = G.turnStartScore;
+  renderAll();
+  finishGame(cp, G.currentPlayer, `CHECKOUT  ${cur} → 0`, true);
+}
+function applyRoundBust() {
+  pushHistory();
+  const cp = G.players[G.currentPlayer];
+  G.dartsThrown[cp] = (G.dartsThrown[cp] || 0) + 3;
+  SFX.bust(); bustFlash();
+  G.scores[cp] = G.turnStartScore;
+  if (G.openedThisTurn) G.hasOpened[cp] = false;
+  keypadEntry = '';
+  advanceRoundTurn(0, true);
+}
+// advanceRoundTurn(): turn-end shared by round submits. The history
+// snapshot was already taken by the caller, so UNDO reverts the whole
+// visit in one press. total==0 (not a bust) is a "no score" visit.
+function advanceRoundTurn(total, bust) {
+  const cp = G.players[G.currentPlayer];
+  if (!G.history[cp]) G.history[cp] = [];
+  G.history[cp].push({ total, bust });
+  const pid = G.playerPids ? G.playerPids[G.currentPlayer] : null;
+  if (!bust && total > 0 && pid) DartLogic.recordThrow(pid, 'round', total);
+  if (!bust && total === 0) SFX.noScore();
+  else SFX.next();
+  G.currentThrows = [];
+  G.currentPlayer = (G.currentPlayer + 1) % G.players.length;
+  G.turnStartScore = G.scores[G.players[G.currentPlayer]];
+  G.openedThisTurn = false;
+  if (G.currentPlayer === 0) {
+    G.round++;
+    if (G.maxRounds > 0 && G.round > G.maxRounds) { endByLimit(); return; }
+  }
+  setMult(1); keypadEntry = '';
+  renderAll(); save();
+}
+
+/* ══════════════════════════════════════
    NEXT PLAYER
    fromBust=true is the auto-advance 900ms after a bust — doThrow() already
    took an undo snapshot right before the busting dart, so we deliberately
@@ -817,9 +1244,20 @@ function nextPlayer(fromBust) {
   } else {
     const total = G.currentThrows.reduce((s, th) => {
       if (!th || th.bust || th.noScore) return s;
-      return s + th.val * th.mult;
+      return s + (th.numeric ? th.points : th.val * th.mult);
     }, 0);
     G.history[cp].push({ total, bust: false });
+    // Record this turn's darts for the preset rows (points only,
+    // misses excluded). Guests have no pid history to record into.
+    const pid = G.playerPids ? G.playerPids[G.currentPlayer] : null;
+    if (pid) G.currentThrows.forEach(th => {
+      if (!th || th.bust || th.noScore) return;
+      const pts = th.numeric ? th.points : th.val * th.mult;
+      if (pts > 0) DartLogic.recordThrow(pid, 'dart', pts);
+    });
+    // Submitting a 0 (all misses, or a turn that scored nothing
+    // because it never opened) plays the No Score announcement.
+    if (total === 0) SFX.noScore();
   }
 
   SFX.next();
@@ -866,11 +1304,23 @@ function finishGame(winnerName, winnerIdx, subText, isCheckout) {
     const dartsThrown  = G.dartsThrown[p] || 0;
     const pointsScored = G.startScore - G.scores[p];
     const ppd          = dartsThrown > 0 ? +(pointsScored / dartsThrown).toFixed(2) : 0;
+    // Highest single visit in this game. Normal turns are already in
+    // history as full turn totals; a checkout turn is only stored as
+    // its last dart there, so for the winner use turnStartScore (the
+    // whole checkout visit) instead. Busts count as 0 and never win.
+    let highestVisit = 0;
+    (G.history[p] || []).forEach(h => {
+      if (!h.bust && h.total > highestVisit) highestVisit = h.total;
+    });
+    if (isCheckout && p === winnerName && G.turnStartScore > highestVisit) {
+      highestVisit = G.turnStartScore;
+    }
     results[pid] = {
       pointsScored,
       dartsThrown,
       ppd,
       checkout: !!(isCheckout && p === winnerName),
+      highestVisit,
     };
   });
 
@@ -950,7 +1400,14 @@ function getCareerWinLossX01(pid, variant) {
 /* ══════════════════════════════════════
    CONTROLS
 ══════════════════════════════════════ */
-document.getElementById('next-btn').addEventListener('click', () => nextPlayer(false));
+document.getElementById('next-btn').addEventListener('click', () => {
+  if (scoringMode === 'round') submitRound();
+  else if (scoringMode === 'single') submitSingleViaNext();
+  else nextPlayer(false);
+});
+document.querySelectorAll('#score-mode-row .score-mode-btn').forEach(b => {
+  b.addEventListener('click', () => applyScoringMode(b.dataset.mode));
+});
 
 document.getElementById('undo-btn').addEventListener('click', () => {
   if (!G.undoStack.length) { toast('NOTHING TO UNDO'); return; }
@@ -964,6 +1421,7 @@ document.getElementById('undo-btn').addEventListener('click', () => {
   G.round          = s.round;
   G.turnStartScore = s.turnStartScore;
   G.openedThisTurn = s.openedThisTurn;
+  keypadEntry = '';
   // Multiplier selection is intentionally left alone here — UNDO only
   // reverts the dart/state, not whatever SINGLE/DOUBLE/TRIPLE is picked.
   renderAll();

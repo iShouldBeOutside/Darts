@@ -138,6 +138,53 @@ function touchPlayer(pid) {
   savePlayers(players);
 }
 
+// ── RENAME / DELETE ─────────────────────────────────────────────────────────
+// renamePlayer(pid, newName)
+// Renames a player everywhere history is shown: the registry AND the
+// name snapshot stored inside each logged game (so old games show the
+// new name). Returns false if the pid is unknown, the name is blank,
+// or another player already has that name (case-insensitive).
+// LIMITATION, by design: a paused game in progress (x01_501, crick4,
+// …) keeps the old name as its in-game key until that game ends, because
+// those saves key their per-player objects by name. The next game
+// started after the rename uses the new name, and stats are keyed by
+// pid throughout, so no history is lost or mis-attributed.
+function renamePlayer(pid, newName) {
+  const players = getPlayers();
+  if (!players[pid]) return false;
+  const name = (newName || '').trim();
+  if (!name) return false;
+  if (isNameTaken(name, pid)) return false;
+  players[pid].name = name;
+  savePlayers(players);
+  const games = getGames();
+  let changed = false;
+  games.forEach(g => {
+    (g.players || []).forEach(p => {
+      if (p.pid === pid && p.name !== name) { p.name = name; changed = true; }
+    });
+  });
+  if (changed) saveGames(games);
+  return true;
+}
+
+// deletePlayer(pid)
+// Removes a player from the registry. Their logged games are KEPT
+// (the pid and name snapshot stay in darts_games), so other players'
+// histories still read correctly — the deleted player simply stops
+// appearing in dropdowns, leaderboards and comparisons. If they were
+// the device owner, the owner is cleared so My Stats re-asks.
+function deletePlayer(pid) {
+  const players = getPlayers();
+  if (!players[pid]) return false;
+  delete players[pid];
+  savePlayers(players);
+  if (getDeviceOwnerPid() === pid) {
+    try { localStorage.removeItem(DEVICE_OWNER_KEY); } catch (e) {}
+  }
+  return true;
+}
+
 // ── DISPLAY NAME HELPERS ──────────────────────────────────────────────────────
 
 // isNameTaken(name, excludePid)
@@ -496,6 +543,36 @@ function getCareerMPR(pid, variant = null) {
 
   if (totalRounds === 0) return null; // not enough data
   return +(totalMarks / totalRounds).toFixed(2); // round to 2 decimal places
+}
+
+// getHighestX01Visit(pid) / getHighestCricketMarks(pid)
+// Best single-visit score ever logged for this player. x01 = highest
+// 3-dart round total in one visit (busts count as 0, so they never win);
+// cricket = most marks in a single round (one player's turn).
+// Games logged before this feature have no per-visit field, so they
+// are skipped — the result is null (shown as "—") until the player
+// plays a game with the new logging. See x01.html/cricket.html, which
+// now record highestVisit / highestMarksInRound in logGame() results.
+function getHighestX01Visit(pid) {
+  let best = null;
+  getGames().forEach(g => {
+    if (g.gameType !== 'x01') return;
+    const r = g.results[pid];
+    if (!r || r.highestVisit == null) return;
+    if (best === null || r.highestVisit > best) best = r.highestVisit;
+  });
+  return best;
+}
+
+function getHighestCricketMarks(pid) {
+  let best = null;
+  getGames().forEach(g => {
+    if (g.gameType !== 'cricket') return;
+    const r = g.results[pid];
+    if (!r || r.highestMarksInRound == null) return;
+    if (best === null || r.highestMarksInRound > best) best = r.highestMarksInRound;
+  });
+  return best;
 }
 
 // getCareerPPD(pid, variant)

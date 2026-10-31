@@ -212,6 +212,7 @@
 </style>
 <script src="../sfx.js"></script>
 <script src="../utils.js"></script>
+<script src="../dartlogic.js"></script>
 <script src="../players.js"></script>
 </head>
 <body>
@@ -286,6 +287,7 @@
       <span class="r-badge" id="r-badge">R1</span>
     </div>
     <div class="top-btns">
+      <button class="theme-btn sound-btn" id="sound-btn">🔔</button>
       <button class="theme-btn" id="theme-btn">☀</button>
       <button class="top-btn" id="save-btn">SAVE</button>
       <button class="top-btn danger" id="end-btn">END</button>
@@ -356,6 +358,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tb) tb.addEventListener('click', () => { toggleTheme(); SFX.hit(); });
 });
 
+// escapeHtml — cricket was the one game page without it, which is
+// part of the O'Malley bug below (names went into HTML unescaped).
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
 const SAVE_KEY  = 'crick4';
 const ALL_NUMS  = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,'B'];
 
@@ -370,6 +380,13 @@ let gameMode = 'hit-only';
 // Tap-to-triple state (turn-local, never persisted)
 let tapPending = null;
 let tapCount   = {};
+
+// Per-turn marks tracking (not persisted mid-game): turnStartMarks
+// is the player's mark total when their turn began, so nextPlayer()
+// can work out how many marks this turn earned — for both the
+// highest-marks-in-a-round stat and the No Score announcement.
+let turnStartMarks = {};
+let turnStartPoints = {};
 
 // Live-stats caches — computed once at launch() since neither the lineup
 // record (past games) nor career MPR (past games) change during this game.
@@ -564,6 +581,7 @@ function freshState() {
     hits: {}, points: {},
     marks: {},   // { playerName: totalMarksInt }
     rounds: {},  // { playerName: completedRoundsInt }
+    roundMarks: {}, // { playerName: [marks per round] } — for highest-round stat
     currentPlayer: 0, currentThrows: [], round: 1, history: []
   };
 }
@@ -585,6 +603,12 @@ function launch() {
 
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('game-screen').style.display  = 'flex';
+  G.players.forEach(p => {
+    turnStartMarks[p] = G.marks[p] || 0;
+    turnStartPoints[p] = G.points[p] || 0;
+    if (!G.roundMarks) G.roundMarks = {};
+    if (!G.roundMarks[p]) G.roundMarks[p] = [];
+  });
   renderAll();
 }
 
@@ -687,7 +711,7 @@ function renderBoard() {
     + '<th style="background:var(--panel);border-right:1px solid var(--border);'
     + 'position:sticky;top:0;z-index:6;min-width:34px"></th>';
   G.players.forEach(p => {
-    h += `<th class="${p === cp ? 'ah' : ''}">${p}</th>`;
+    h += `<th class="${p === cp ? 'ah' : ''}">${escapeHtml(p)}</th>`;
   });
   h += '</tr></thead><tbody>';
 
@@ -695,12 +719,22 @@ function renderBoard() {
     const bull     = t === 'B';
     const colorCls = targetColorClass(t);
     h += `<tr><td class="tc${bull ? ' bull' : ''} ${colorCls}">${bull ? 'B' : t}</td>`;
-    G.players.forEach(p => {
+    G.players.forEach((p, pi) => {
       const isActive     = p === cp;
       const pendingExtra = (isActive && tapPending === t) ? (tapCount[t] || 0) : 0;
       const displayHits  = G.hits[p][t] + pendingExtra;
+      // No inline onclick and no name in the HTML: the cell carries
+      // the player INDEX and target, and a listener below resolves
+      // the name from G.players. Names with ' " < > etc. therefore
+      // cannot break the handler any more. (This was the O'Malley
+      // bug: tapCell('Sean O'Malley','15') is a JS syntax error, so
+      // every tap on that player's cells silently did nothing. The
+      // dropdown itself was fine — it uses textContent, not HTML —
+      // which is why the name could be added and selected, but never
+      // actually played with. x01 never had this pattern, so it was
+      // cricket-only; other games use plain text inputs/buttons.)
       h += `<td class="mc${isActive ? ' ac' : ' other'}"${
-        isActive ? ` onclick="tapCell('${p}','${t}')"` : ''
+        isActive ? ` data-player-idx="${pi}" data-target="${t}"` : ''
       }>${dotsHtml(displayHits)}</td>`;
     });
     h += '</tr>';
@@ -713,7 +747,14 @@ function renderBoard() {
   // They now live in #stats-bar (see renderStatsBar()), which sits outside
   // the scrolling area and is always visible.
 
-  document.getElementById('score-table').innerHTML = h;
+  const table = document.getElementById('score-table');
+  table.innerHTML = h;
+  table.querySelectorAll('.mc[data-player-idx]').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const pi = +cell.dataset.playerIdx;
+      tapCell(G.players[pi], cell.dataset.target);
+    });
+  });
 }
 
 /* ══════════════════════════════════════
@@ -982,7 +1023,7 @@ function doThrow(target, m, dead) {
 
 function tapCell(player, target) {
   if (player !== G.players[G.currentPlayer]) { toast('NOT YOUR TURN'); return; }
-  const t = target === 'B' ? 'B' : +target;
+  const t = target === 'B' ? 'B' : +target; // dataset gives strings; same normalisation as before
   const dead = G.players.every(p => G.hits[p][t] >= 3); // closed by everyone already
   tapTarget(t, dead);
 }
@@ -998,12 +1039,24 @@ function nextPlayer() {
   // G.rounds tracks completed rounds per player.
   // A "round" is one full set of 3 darts (or fewer if turn ended early).
   const cp = G.players[G.currentPlayer];
+  // Marks / points earned THIS turn (for highest-round stat + No Score).
+  const turnMarks = (G.marks[cp] || 0) - (turnStartMarks[cp] || 0);
+  const turnPointsGain = (G.points[cp] || 0) - (turnStartPoints[cp] || 0);
+  if (!G.roundMarks) G.roundMarks = {};
+  if (!G.roundMarks[cp]) G.roundMarks[cp] = [];
+  G.roundMarks[cp].push(turnMarks);
+  // A turn that earned no marks and no points is a "no score" turn:
+  // pressing NEXT with only misses, dead darts, or nothing at all.
+  if (turnMarks === 0 && turnPointsGain === 0) SFX.noScore();
   G.rounds[cp] = (G.rounds[cp] || 0) + 1;
 
   G.currentThrows  = [];
   tapCount         = {};
   tapPending       = null;
   G.currentPlayer  = (G.currentPlayer + 1) % G.players.length;
+  const np = G.players[G.currentPlayer];
+  turnStartMarks[np] = G.marks[np] || 0;
+  turnStartPoints[np] = G.points[np] || 0;
   if (G.currentPlayer === 0) {
     G.round++;
     if (G.maxRounds > 0 && G.round > G.maxRounds) {
@@ -1070,11 +1123,19 @@ function doWin(winnerName, winnerIdx, subText) {
   G.players.forEach((p, i) => {
     const marks  = G.marks[p]  || 0;
     const rounds = G.rounds[p] || 0;
+    // Highest marks in any single round this game. The winning turn
+    // never goes through nextPlayer(), so include the current turn's
+    // marks for the winner (marks now minus turn start).
+    const roundMarks = [...(G.roundMarks ? (G.roundMarks[p] || []) : [])];
+    if (p === winnerName) {
+      roundMarks.push((G.marks[p] || 0) - (turnStartMarks[p] || 0));
+    }
     results[G.playerPids[i]] = {
       marks,
       rounds,
       mpr:    rounds > 0 ? +(marks / rounds).toFixed(2) : 0,
       points: G.points[p] || 0,
+      highestMarksInRound: roundMarks.length ? Math.max(...roundMarks) : 0,
     };
   });
 
@@ -1093,7 +1154,7 @@ function doWin(winnerName, winnerIdx, subText) {
   // Shows each player's MPR this game + their career average MPR
   let statsHtml = '<table class="win-stats"><tr>';
   G.players.forEach(p => {
-    statsHtml += `<td class="ws-name">${p}</td>`;
+    statsHtml += `<td class="ws-name">${escapeHtml(p)}</td>`;
   });
   statsHtml += '</tr><tr>';
 
