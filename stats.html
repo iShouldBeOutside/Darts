@@ -87,6 +87,7 @@
   <div class="setup-top">
     <a class="back-btn" href="index.html">◂ HUB</a>
     <div class="setup-title" style="flex:1">STATS</div>
+    <button class="theme-btn sound-btn" id="sound-btn">🔔</button>
     <button class="theme-btn" id="theme-btn">☀</button>
   </div>
 
@@ -95,6 +96,7 @@
     <div class="tab-btn on" id="tabbtn-leaderboard">LEADERBOARD</div>
     <div class="tab-btn" id="tabbtn-mystats">MY STATS</div>
     <div class="tab-btn" id="tabbtn-compare">COMPARE</div>
+    <div class="tab-btn" id="tabbtn-players">PLAYERS</div>
   </div>
 
   <!-- ══════════════════════════════════════
@@ -145,6 +147,19 @@
   </div>
 
   <!-- ══════════════════════════════════════
+       TAB 4: PLAYERS (rename / delete)
+       Renaming updates logged-game names too (players.js); deleting
+       keeps logged games but removes the player from every list.
+  ══════════════════════════════════════ -->
+  <div id="tab-players" style="display:none">
+    <div class="s-section">
+      <span class="s-label">[ PLAYERS — RENAME / DELETE ]</span>
+      <div class="row2-hint" style="margin-bottom:0.8rem">RENAME CHANGES THE NAME IN PAST GAMES TOO. DELETE KEEPS PAST GAMES BUT REMOVES THE PLAYER FROM LISTS. A PAUSED GAME KEEPS THE OLD NAME UNTIL IT ENDS.</div>
+      <div id="players-admin-list"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
        TAB 3: COMPARE
   ══════════════════════════════════════ -->
   <div id="tab-compare" style="display:none">
@@ -182,7 +197,7 @@ function escapeHtml(str) {
 /* ══════════════════════════════════════
    TAB SWITCHING
 ══════════════════════════════════════ */
-const TABS = ['leaderboard', 'mystats', 'compare'];
+const TABS = ['leaderboard', 'mystats', 'compare', 'players'];
 
 function switchTab(name) {
   TABS.forEach(t => {
@@ -191,6 +206,7 @@ function switchTab(name) {
   });
   if (name === 'mystats') renderMyStats();
   if (name === 'compare') { renderComparePills(); renderCompareResult(); }
+  if (name === 'players') renderPlayersAdmin();
 }
 
 /* ══════════════════════════════════════
@@ -379,17 +395,19 @@ function renderLeaderboardTable() {
   const metricLabel = lbGameType === 'cricket' ? 'MPR' : 'PPD';
 
   let html = `<div style="overflow-x:auto"><table class="score-table"><thead><tr>
-    <th>#</th><th>PLAYER</th><th>${metricLabel}</th><th>GAMES</th><th>WINS</th>
+    <th>#</th><th>PLAYER</th><th>${metricLabel}</th><th>HIGHEST</th><th>GAMES</th><th>WINS</th>
   </tr></thead><tbody>`;
 
   if (rows.length === 0) {
-    html += `<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--text-dim)">NO PLAYERS MATCH THESE FILTERS</td></tr>`;
+    html += `<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--text-dim)">NO PLAYERS MATCH THESE FILTERS</td></tr>`;
   } else {
     rows.forEach((r, i) => {
+      const highest = lbGameType === 'cricket' ? getHighestCricketMarks(r.pid) : getHighestX01Visit(r.pid);
       html += `<tr>
         <td style="text-align:center">${i + 1}</td>
         <td><a href="profile.html?pid=${encodeURIComponent(r.pid)}" style="color:inherit;text-decoration:none">${escapeHtml(r.name)}</a></td>
         <td style="text-align:center;color:var(--led-amber)">${r.metric !== null ? r.metric : '—'}</td>
+        <td style="text-align:center">${highest !== null ? highest : '—'}</td>
         <td style="text-align:center">${r.games}</td>
         <td style="text-align:center">${r.wins}</td>
       </tr>`;
@@ -463,6 +481,13 @@ function renderMyStats() {
       ${ppdAll !== null ? `<span style="color:var(--led-amber);font-size:1.2rem">${ppdAll}</span> PPD` : 'NO X01 GAMES LOGGED YET'}
     </div>
 
+    <div class="s-label">[ HIGHEST SCORES ]</div>
+    <div class="row2-hint" style="margin-bottom:1.2rem">
+      X01 HIGHEST VISIT (3 DARTS): <span style="color:var(--led-amber)">${fmt(getHighestX01Visit(ownerPid))}</span><br>
+      CRICKET HIGHEST MARKS IN ONE ROUND: <span style="color:var(--led-amber)">${fmt(getHighestCricketMarks(ownerPid))}</span><br>
+      <span style="font-size:0.6rem">— = NO GAME LOGGED SINCE THIS WAS ADDED; OLD GAMES DID NOT RECORD PER-VISIT SCORES.</span>
+    </div>
+
     <div class="s-label">[ RECENT GAMES ]</div>
     <div id="mystats-recent-list">
       ${recent.length === 0
@@ -510,6 +535,8 @@ function renderCompareResult() {
     { label: 'CRICKET MPR (CUTTHROAT)', fn: pid => getCareerMPR(pid, 'cutthroat') },
     { label: 'CRICKET MPR (HIT-ONLY)',  fn: pid => getCareerMPR(pid, 'hit-only') },
     { label: 'X01 PPD (ALL)',           fn: pid => getCareerPPD(pid, null) },
+    { label: 'CRICKET HIGHEST MARKS/RD (CAREER)', fn: pid => getHighestCricketMarks(pid) },
+    { label: 'X01 HIGHEST VISIT (CAREER)',        fn: pid => getHighestX01Visit(pid) },
   ];
 
   let html = '<div style="overflow-x:auto"><table class="score-table"><thead><tr><th></th>';
@@ -528,15 +555,114 @@ function renderCompareResult() {
   });
 
   // Head-to-head: only count games where every selected player was present together.
+  // "Average" here is weighted by the game's own denominator (points/darts
+  // for x01, marks/rounds for cricket), not an average of per-game
+  // averages, so a long game counts more than a short one. "Highest" is
+  // the best single visit / round in those shared games only — not
+  // career — and is "—" for old games that did not record it.
   const sharedGames = getGames().filter(g => pids.every(pid => g.players.some(p => p.pid === pid)));
   html += `<tr><td style="text-align:left;color:var(--text-dim);font-size:0.62rem;letter-spacing:0.05em">H2H WINS (${sharedGames.length} SHARED)</td>`;
   pids.forEach(pid => {
     const wins = sharedGames.filter(g => g.winner === pid).length;
     html += `<td style="text-align:center">${wins}</td>`;
   });
-  html += '</tr></tbody></table></div>';
+  html += '</tr>';
+  const h2hRow = (label, fn) => {
+    html += `<tr><td style="text-align:left;color:var(--text-dim);font-size:0.62rem;letter-spacing:0.05em">${label}</td>`;
+    pids.forEach(pid => { const v = fn(pid); html += `<td style="text-align:center;color:var(--led-amber)">${v !== null ? v : '—'}</td>`; });
+    html += '</tr>';
+  };
+  const h2hX01 = pid => sharedGames.filter(g => g.gameType === 'x01' && g.results[pid]);
+  const h2hCric = pid => sharedGames.filter(g => g.gameType === 'cricket' && g.results[pid]);
+  h2hRow('H2H X01 AVG PPD', pid => {
+    const gs = h2hX01(pid); let pts = 0, d = 0;
+    gs.forEach(g => { pts += g.results[pid].pointsScored || 0; d += g.results[pid].dartsThrown || 0; });
+    return d > 0 ? +(pts / d).toFixed(2) : null;
+  });
+  h2hRow('H2H X01 HIGHEST VISIT', pid => {
+    let best = null;
+    h2hX01(pid).forEach(g => { const v = g.results[pid].highestVisit; if (v != null && (best === null || v > best)) best = v; });
+    return best;
+  });
+  h2hRow('H2H CRICKET AVG MPR', pid => {
+    const gs = h2hCric(pid); let m = 0, r = 0;
+    gs.forEach(g => { m += g.results[pid].marks || 0; r += g.results[pid].rounds || 0; });
+    return r > 0 ? +(m / r).toFixed(2) : null;
+  });
+  h2hRow('H2H CRICKET HIGHEST MARKS/RD', pid => {
+    let best = null;
+    h2hCric(pid).forEach(g => { const v = g.results[pid].highestMarksInRound; if (v != null && (best === null || v > best)) best = v; });
+    return best;
+  });
+  html += '</tbody></table></div>';
 
   wrap.innerHTML = html;
+}
+
+/* ══════════════════════════════════════
+   TAB 4: PLAYERS ADMIN
+══════════════════════════════════════ */
+function renderPlayersAdmin() {
+  const wrap = document.getElementById('players-admin-list');
+  const playersObj = getPlayers();
+  const list = Object.values(playersObj).sort((a, b) => a.name.localeCompare(b.name));
+  if (!list.length) {
+    wrap.innerHTML = '<div class="row2-hint">NO PLAYERS YET — ADD ONE FROM ANY GAME SCREEN.</div>';
+    return;
+  }
+  wrap.innerHTML = '';
+  list.forEach(p => {
+    const games = getGames().filter(g => g.players.some(pl => pl.pid === p.pid)).length;
+    const row = document.createElement('div');
+    row.className = 'pa-row';
+    const nameEl = document.createElement('a');
+    nameEl.className = 'pa-name';
+    nameEl.href = `profile.html?pid=${encodeURIComponent(p.pid)}`;
+    nameEl.style.color = 'inherit'; nameEl.style.textDecoration = 'none';
+    nameEl.textContent = `${displayName(p, playersObj)} (${games} GAMES)`;
+    const btns = document.createElement('div');
+    btns.className = 'pa-btns';
+    const renameBtn = document.createElement('button');
+    renameBtn.className = 'pa-btn'; renameBtn.textContent = 'RENAME';
+    renameBtn.addEventListener('click', () => {
+      // Inline edit (no modal): swap the name for an input + SAVE/CANCEL.
+      const input = document.createElement('input');
+      input.className = 'led-input'; input.value = p.name; input.style.padding = '0.4rem 0.6rem';
+      nameEl.replaceWith(input); input.focus(); input.select();
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'pa-btn'; saveBtn.textContent = 'SAVE';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'pa-btn'; cancelBtn.textContent = 'CANCEL';
+      btns.innerHTML = ''; btns.append(saveBtn, cancelBtn);
+      const finish = (save) => {
+        if (save) {
+          const newName = input.value.trim();
+          if (!newName) { toast('ENTER A NAME'); return; }
+          if (!renamePlayer(p.pid, newName)) { toast('NAME ALREADY TAKEN'); return; }
+          toast('PLAYER RENAMED');
+        }
+        renderPlayersAdmin();
+      };
+      saveBtn.addEventListener('click', () => finish(true));
+      cancelBtn.addEventListener('click', () => finish(false));
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); });
+    });
+    const delBtn = document.createElement('button');
+    delBtn.className = 'pa-btn danger'; delBtn.textContent = 'DELETE';
+    delBtn.addEventListener('click', () => {
+      if (!confirm(`Delete ${p.name}? Past games are kept, but this player will no longer appear in lists or stats.`)) return;
+      deletePlayer(p.pid);
+      lbSelectedPids.delete(p.pid); cmpSelectedPids.delete(p.pid);
+      toast('PLAYER DELETED');
+      renderPlayersAdmin();
+      renderPlayerPills('lb-player-pills', lbSelectedPids, renderLeaderboardTable);
+      renderLeaderboardTable();
+      renderComparePills(); renderCompareResult();
+    });
+    btns.append(renameBtn, delBtn);
+    row.append(nameEl, btns);
+    wrap.appendChild(row);
+  });
 }
 
 /* ══════════════════════════════════════
@@ -546,6 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tabbtn-leaderboard').addEventListener('click', () => switchTab('leaderboard'));
   document.getElementById('tabbtn-mystats').addEventListener('click', () => switchTab('mystats'));
   document.getElementById('tabbtn-compare').addEventListener('click', () => switchTab('compare'));
+  document.getElementById('tabbtn-players').addEventListener('click', () => switchTab('players'));
 
   document.getElementById('lb-gametype-pills').addEventListener('click', e => {
     const c = e.target.closest('.chip'); if (!c) return;

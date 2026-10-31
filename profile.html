@@ -147,6 +147,7 @@ body.theme-bright .edit-modal-overlay { background: rgba(200,196,180,0.96); }
   <div class="setup-top">
     <a class="back-btn" href="index.html">◂ HUB</a>
     <div class="setup-title" style="flex:1" id="profile-title-text">PROFILE</div>
+    <button class="theme-btn sound-btn" id="sound-btn">🔔</button>
     <button class="theme-btn" id="theme-btn">☀</button>
   </div>
 
@@ -330,7 +331,10 @@ function renderProfile(pid) {
         <div>
           <div class="profile-name">${escapeHtml(player.name)}</div>
         </div>
-        <button class="profile-edit-btn" id="profile-edit-btn">✎ EDIT</button>
+        <div style="display:flex;gap:0.4rem;flex-shrink:0">
+          <button class="profile-edit-btn" id="profile-edit-btn">✎ EDIT</button>
+          <button class="profile-edit-btn" id="profile-delete-btn" style="color:var(--led-red)">DELETE</button>
+        </div>
       </div>
 
       <div class="row2-hint" style="margin:0.5rem 0 0">${games.length} GAMES · ${winCount}W-${lossCount}L (${winPct})</div>
@@ -352,6 +356,11 @@ function renderProfile(pid) {
 
   // ── Wire up the buttons we just rendered ──
   document.getElementById('profile-edit-btn').addEventListener('click', () => openEditModal(pid));
+  document.getElementById('profile-delete-btn').addEventListener('click', () => {
+    if (!confirm(`Delete ${player.name}? Past games are kept, but this player will no longer appear in lists or stats.`)) return;
+    deletePlayer(pid);
+    window.location.href = 'profile.html';
+  });
 
   const setOwnerBtn = document.getElementById('profile-set-owner-btn');
   if (setOwnerBtn) {

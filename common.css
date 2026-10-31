@@ -691,3 +691,66 @@ body.theme-bright .owner-modal-overlay { background: rgba(200,196,180,0.96); }
   letter-spacing: 0.05em;
   border-radius: 0.4rem;
 }
+/* ═══ X01 SCORING MODES / KEYPAD / PRESETS / CHECKOUT (added 2026-10-31) ═══
+   Sized for a Pixel 6 (412px wide): keypad keys are ~48px tall, presets
+   wrap to at most 2 rows, and the whole input panel stays compact. */
+.score-mode-row { display: flex; gap: 0.2rem; }
+.score-mode-btn {
+  background: var(--cab); border: 1px solid var(--border); border-radius: 0.35rem;
+  color: var(--text-dim); font-family: var(--seg); font-size: 0.85rem; line-height: 1;
+  padding: 0.35rem 0.3rem; cursor: pointer; text-align: center; min-width: 0;
+  touch-action: manipulation;
+}
+.score-mode-btn:active { transform: scale(0.94); }
+.score-mode-btn.active { border-color: var(--led-amber); color: var(--led-amber); background: var(--led-amber-dim); text-shadow: 0 0 6px rgba(255,170,0,0.4); }
+.throw-slots-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.checkout-line { font-size: 0.72rem; color: var(--led-amber); letter-spacing: 0.04em; text-align: right; line-height: 1.4; min-height: 1.1em; }
+.checkout-line .co-leave { color: var(--text-dim); font-size: 0.62rem; display: block; }
+.tslot.pending { color: var(--led-amber); border-color: var(--led-amber); box-shadow: 0 0 6px rgba(255,170,0,0.4); }
+.tslot.single-val { border-color: var(--led-amber); color: var(--led-amber); }
+.preset-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.32rem; }
+.preset-lbl { font-size: 0.52rem; letter-spacing: 0.2em; color: var(--text-dim); margin-bottom: 0.3rem; }
+.preset-btn {
+  background: var(--cab); border: 1px solid var(--border); border-radius: 0.35rem;
+  color: var(--text-bright); font-family: var(--seg); font-size: 1rem;
+  padding: 0.8rem 0.2rem; cursor: pointer; touch-action: manipulation; min-width: 0; text-align: center;
+}
+.preset-btn:active { transform: scale(0.92); border-color: var(--led-amber); color: var(--led-amber); }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.32rem; }
+.key-btn {
+  background: var(--cab); border: 1px solid var(--border); border-radius: 0.4rem;
+  color: var(--text-bright); font-family: var(--seg); font-size: 1.15rem;
+  padding: 0.65rem 0; cursor: pointer; text-align: center; touch-action: manipulation;
+}
+.key-btn:active { transform: scale(0.94); background: var(--led-amber-dim); }
+.key-btn.action { color: var(--led-amber); font-size: 0.8rem; letter-spacing: 0.05em; }
+.key-btn.submit { color: var(--led-green); border-color: var(--led-green-dim); }
+/* Invalid-score popup: full-screen scrim, any tap dismisses it and
+   leaves the typed entry on screen (JS never clears the entry). */
+.invalid-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(5,5,6,0.92);
+  z-index: 400; align-items: center; justify-content: center; padding: 1.4rem;
+}
+.invalid-overlay.show { display: flex; }
+.invalid-panel {
+  background: var(--panel); border: 1px solid var(--led-red); border-radius: 0.6rem;
+  padding: 1.4rem 1.2rem; max-width: 340px; width: 100%; text-align: center;
+}
+.invalid-panel .inv-title { color: var(--led-red); font-size: 1rem; letter-spacing: 0.1em; margin-bottom: 0.6rem; }
+.invalid-panel .inv-body { color: var(--text-dim); font-size: 0.75rem; line-height: 1.6; letter-spacing: 0.04em; }
+/* Sound button: same look as .theme-btn; 🔕 state is just the glyph. */
+.sound-btn.sound-off { opacity: 0.7; }
+/* Player admin rows (stats.html PLAYERS tab + profile delete). */
+.pa-row {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 0.4rem;
+  padding: 0.7rem 0.9rem; margin-bottom: 0.45rem; display: flex; align-items: center;
+  justify-content: space-between; gap: 0.5rem;
+}
+.pa-name { font-size: 0.85rem; letter-spacing: 0.05em; word-break: break-word; flex: 1; min-width: 0; }
+.pa-btns { display: flex; gap: 0.35rem; flex-shrink: 0; }
+.pa-btn {
+  background: var(--cab); border: 1px solid var(--border); border-radius: 0.35rem;
+  color: var(--text-dim); font-family: var(--seg); font-size: 0.65rem;
+  padding: 0.4rem 0.6rem; cursor: pointer; letter-spacing: 0.05em;
+}
+.pa-btn.danger { color: var(--led-red); border-color: var(--led-red-dim); }

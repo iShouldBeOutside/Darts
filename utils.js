@@ -22,6 +22,22 @@ function toggleTheme() {
 }
 
 /* ═══════════════════════════════════════
+   SOUND BUTTON — auto-bound, no per-page wiring needed.
+   Any <button class="sound-btn"> on a page shows 🔔 / 🔕 for the
+   global darts-sound setting (see sfx.js) and toggles it on tap.
+   Pages that do not have such a button are unaffected.
+═══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  const btns = document.querySelectorAll('.sound-btn');
+  if (!btns.length || typeof SFX === 'undefined') return;
+  SFX.setSoundOn(SFX.isSoundOn()); // paints the current icon on all buttons
+  btns.forEach(b => b.addEventListener('click', () => {
+    SFX.setSoundOn(!SFX.isSoundOn());
+    if (SFX.isSoundOn()) SFX.noScore(); // audible confirmation it is back on
+  }));
+});
+
+/* ═══════════════════════════════════════
    TOAST
 ═══════════════════════════════════════ */
 function toast(msg) {

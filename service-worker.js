@@ -6,7 +6,7 @@
 // ── 1. CACHE NAME ──────────────────────────────────────────────────────────
 // Change the version string (e.g. "v2") whenever you deploy an update.
 // This forces old caches to be cleared automatically.
-const CACHE_NAME = "darts-cache-v3";
+const CACHE_NAME = "darts-cache-v5";
 
 // ── 2. FILES TO PRE-CACHE ON INSTALL ───────────────────────────────────────
 // These are fetched and stored the moment the PWA is first installed.
@@ -20,6 +20,7 @@ const PRECACHE_URLS = [
   "/Darts/sfx.js",
   "/Darts/utils.js",
   "/Darts/players.js",
+  "/Darts/dartlogic.js",
   "/Darts/manifest.json",
   "/Darts/icon-192.png",
   "/Darts/icon-512.png",
@@ -31,7 +32,12 @@ const PRECACHE_URLS = [
   "/Darts/games/bobs27.html",
   "/Darts/games/killer.html",
   "/Darts/games/legs.html",
-  "/Darts/games/countup.html"
+  "/Darts/games/countup.html",
+  // No Score clip. Listed so it works offline after first install,
+  // but a missing file here must NOT break the install (see below) —
+  // if you delete assets/0.wav later, the app just falls back to
+  // speaking "No score" (see sfx.js).
+  "/Darts/assets/0.wav"
 ];
 
 // ── 3. INSTALL EVENT ───────────────────────────────────────────────────────
@@ -41,7 +47,18 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log("[SW] Pre-caching app shell");
-      return cache.addAll(PRECACHE_URLS);
+      // Cache each file individually, tolerating failures, instead of
+      // cache.addAll(). addAll() fails the WHOLE install if any one
+      // file 404s — which is exactly what would happen if
+      // assets/0.wav is ever removed. With individual adds, a missing
+      // clip is just skipped and everything else still caches.
+      return Promise.all(
+        PRECACHE_URLS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn("[SW] Skipping uncacheable file:", url, err);
+          })
+        )
+      );
     })
   );
   // Activate immediately — don't wait for old tabs to close
